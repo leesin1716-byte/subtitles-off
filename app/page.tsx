@@ -1,69 +1,52 @@
-import Image from "next/image";
+// 첫 화면: 모드(live/mock) 판정, 운영 설정 오류 화면, 공유 링크 입력 복원
+import { PlannerApp } from "@/components/PlannerApp";
+import { resolveQlooMode } from "@/lib/config";
+import { decodeInput } from "@/lib/plan/share";
 
-export default function Home() {
+export default async function Home({ searchParams }: PageProps<"/">) {
+  const params = await searchParams;
+  const mode = resolveQlooMode(process.env);
+  const initialInput = decodeInput(params);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
+    <>
+      {mode.ok && mode.mode === "mock" && (
+        <div role="status" className="sample-band print:hidden">
+          Sample data — not live Qloo. Hand-made examples so the flow works without an API key.
+        </div>
+      )}
+      <header className="mx-auto flex w-full max-w-6xl items-end justify-between gap-4 px-4 pt-8 md:px-6">
+        <div>
+          <h1 className="font-display text-4xl leading-none tracking-tight sm:text-5xl">
+            Subtitles <span className="off">Off</span>
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+          <p className="mt-2 text-ink-soft">Keep a language alive through the things you already love.</p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+        <p className="hidden text-right text-xs text-ink-soft sm:block">
+          Powered by Qloo taste data
+          <br />
+          {mode.ok ? (mode.mode === "live" ? "Live Qloo API" : "Sample mode") : "Not configured"}
+        </p>
+      </header>
+      <main className="flex-1">
+        {mode.ok ? (
+          <PlannerApp mode={mode.mode} initialInput={initialInput} />
+        ) : (
+          <section className="mx-auto mt-10 max-w-xl px-4">
+            <div className="card border-l-4 border-l-[var(--danger)] p-6" role="alert">
+              <h2 className="text-lg font-semibold">This demo is not configured</h2>
+              <p className="mt-2 text-sm">
+                It needs a Qloo API key to run. Sample data is switched off on the production site on purpose, so every plan you see
+                here comes from the live Qloo API.
+              </p>
+              <p className="mt-2 text-xs text-ink-soft">{mode.reason}</p>
+            </div>
+          </section>
+        )}
       </main>
-    </div>
+      <footer className="mx-auto w-full max-w-6xl px-4 pb-8 text-xs text-ink-soft md:px-6 print:hidden">
+        Open source (MIT). Built for the Qloo Agent Hackathon. No accounts, no tracking; names are never sent to any API.
+      </footer>
+    </>
   );
 }

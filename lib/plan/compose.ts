@@ -46,7 +46,7 @@ export function selectByRules(ctx: PlanContext): Pick[] {
     const easy = screen.find((c) => c.tier === 1);
     if (easy) shortlist = [...shortlist.slice(0, 7), easy];
   }
-  const artists = [...ctx.byDomain.artist].sort(byAffinity).slice(0, 4);
+  const artists = [...ctx.byDomain.artist].sort(byAffinity).slice(0, ctx.refinement.moreMusic ? 8 : 4);
   return [...shortlist, ...artists].map((c) => ({ entityId: c.entityId }));
 }
 
