@@ -7,7 +7,7 @@ export interface RateLimitRule {
 
 export const DEFAULT_RULES: RateLimitRule[] = [
   { windowMs: 60_000, max: 6 },
-  { windowMs: 24 * 60 * 60_000, max: 60 },
+  { windowMs: 24 * 60 * 60_000, max: 200 },
 ];
 
 export class RateLimiter {

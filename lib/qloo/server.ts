@@ -23,3 +23,14 @@ export function getQlooClient(env: Record<string, string | undefined> = process.
       : new MockQlooClient();
   return { ok: true, client: cachedClient };
 }
+
+/** A client with its own empty cache, so a health check really reaches Qloo. */
+export function getUncachedQlooClient(env: Record<string, string | undefined> = process.env): ClientResult {
+  const resolved = resolveQlooMode(env);
+  if (!resolved.ok) return resolved;
+  const client =
+    resolved.mode === "live"
+      ? new HttpQlooClient({ apiKey: env.QLOO_API_KEY!.trim(), baseUrl: env.QLOO_BASE_URL, cache: new TtlCache() })
+      : new MockQlooClient();
+  return { ok: true, client };
+}
