@@ -12,6 +12,7 @@ import {
   DOMAINS,
   findAvoidTags,
   findMusicTags,
+  findTasteTags,
   resolveFavorites,
   widen,
   WIDEN_LABELS,
@@ -25,13 +26,20 @@ export interface RunDeps {
   modelName?: string;
   emit: (e: PlanEvent) => void;
   abortSignal?: AbortSignal;
+  /** Qloo calls allowed for this plan (default PLAN_CALL_BUDGET). */
+  callBudget?: number;
+  /** Time the LLM agent gets before the rule planner takes over (default LLM_TIMEOUT_MS). */
+  llmTimeoutMs?: number;
 }
+
+/** Leaves room inside the 60 s function limit for the rule planner after an LLM timeout. */
+export const LLM_TIMEOUT_MS = 25_000;
 
 const DOMAIN_LABEL = { tv_show: "TV", movie: "film", artist: "music" } as const;
 
 export async function runPlan(input: PlanInput, deps: RunDeps): Promise<void> {
   const { emit } = deps;
-  const client = new BudgetedClient(deps.client, PLAN_CALL_BUDGET, (call) => emit({ type: "qloo", call }));
+  const client = new BudgetedClient(deps.client, deps.callBudget ?? PLAN_CALL_BUDGET, (call) => emit({ type: "qloo", call }));
   const ctx = createContext(input, client, emit);
 
   try {
@@ -48,7 +56,8 @@ export async function runPlan(input: PlanInput, deps: RunDeps): Promise<void> {
     }
     emit({ type: "trace", step: "Favorites matched", detail: seeds.map((s) => s.name).join(", ") });
 
-    const [music] = await Promise.all([findMusicTags(ctx), findAvoidTags(ctx)]);
+    const [music] = await Promise.all([findMusicTags(ctx), findAvoidTags(ctx), findTasteTags(ctx)]);
+    if (ctx.tasteTags.length) emit({ type: "trace", step: "Taste analysis: genres Qloo links to your favorites", detail: ctx.tasteTags.join(", ") });
     recordApplied(ctx);
     emit({
       type: "trace",
@@ -62,8 +71,11 @@ export async function runPlan(input: PlanInput, deps: RunDeps): Promise<void> {
 
     if (deps.model) {
       emit({ type: "trace", step: `Agent planning with ${deps.modelName ?? "LLM"}` });
+      const llmSignal = AbortSignal.any(
+        [deps.abortSignal, AbortSignal.timeout(deps.llmTimeoutMs ?? LLM_TIMEOUT_MS)].filter((s): s is AbortSignal => !!s),
+      );
       try {
-        const r = await runLlmPlanner(ctx, deps.model, deps.abortSignal);
+        const r = await runLlmPlanner(ctx, deps.model, llmSignal);
         if (r.picks) {
           picks = r.picks;
           planner = "llm";
@@ -74,8 +86,10 @@ export async function runPlan(input: PlanInput, deps: RunDeps): Promise<void> {
         }
       } catch (e) {
         if (e instanceof QlooError) throw e;
-        note = "LLM unavailable; used the rule-based planner.";
-        emit({ type: "trace", step: "LLM planner failed, using rules", detail: (e as Error)?.message?.slice(0, 160) });
+        if (deps.abortSignal?.aborted) return; // the browser went away
+        const timedOut = llmSignal.aborted;
+        note = timedOut ? "LLM agent ran out of time; used the rule-based planner." : "LLM unavailable; used the rule-based planner.";
+        emit({ type: "trace", step: timedOut ? "LLM planner timed out, using rules" : "LLM planner failed, using rules", detail: (e as Error)?.message?.slice(0, 160) });
       }
     }
 
@@ -92,7 +106,7 @@ export async function runPlan(input: PlanInput, deps: RunDeps): Promise<void> {
       return;
     }
     emit({ type: "trace", step: "Building the four-week ladder", detail: "difficulty from genre rules, easiest first" });
-    emit({ type: "plan", plan: assemblePlan(ctx, picks, planner, note) });
+    emit({ type: "plan", plan: { ...assemblePlan(ctx, picks, planner, note), llmConfigured: Boolean(deps.model) } });
   } catch (e) {
     emit(toErrorEvent(e));
   }
@@ -100,8 +114,9 @@ export async function runPlan(input: PlanInput, deps: RunDeps): Promise<void> {
 
 /** Deterministic path: discover every domain not yet discovered, widen thin ones. */
 async function discoverByRules(ctx: PlanContext): Promise<void> {
+  const pending = DOMAINS.filter((d) => !ctx.discovered.has(d)).slice(0, Math.max(0, ctx.client.remaining));
   await Promise.all(
-    DOMAINS.filter((d) => !ctx.discovered.has(d)).map(async (d) => {
+    pending.map(async (d) => {
       const list = await discover(ctx, d);
       ctx.emit({ type: "trace", step: `Discovered ${DOMAIN_LABEL[d]}`, detail: `${list.length} candidates` });
     }),
@@ -113,7 +128,7 @@ async function discoverByRules(ctx: PlanContext): Promise<void> {
       if (!r) break;
       ctx.emit({ type: "trace", step: `Widened ${DOMAIN_LABEL[d]}`, detail: `${WIDEN_LABELS[r.stage]} → ${r.candidates.length} candidates` });
     }
-    if (ctx.byDomain[d].length < 3 && ctx.client.remaining === 0) {
+    if (ctx.byDomain[d].length < 3 && ctx.client.remaining <= 0) {
       ctx.emit({ type: "trace", step: "Qloo call budget reached", detail: "continuing with what was found" });
       break;
     }

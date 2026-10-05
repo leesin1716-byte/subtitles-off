@@ -56,13 +56,24 @@ export interface LlmResult {
 }
 
 export async function runLlmPlanner(ctx: PlanContext, model: LanguageModel, abortSignal?: AbortSignal): Promise<LlmResult> {
-  const state: { picks: Pick[] | null; failures: number; fatal: QlooError | null } = { picks: null, failures: 0, fatal: null };
+  const state: { picks: Pick[] | null; failures: number; fatal: QlooError | null; budgetHits: number } = {
+    picks: null,
+    failures: 0,
+    fatal: null,
+    budgetHits: 0,
+  };
 
   const guard = async <T>(fn: () => Promise<T>): Promise<T | { error: string }> => {
     try {
       return await fn();
     } catch (e) {
-      if (e instanceof QlooError && (e.kind === "auth" || e.kind === "rate_limited" || e.kind === "budget_exceeded")) {
+      // Running out of the per-plan call budget is not fatal: the agent (or the rule planner) composes from what it has.
+      if (e instanceof QlooError && e.kind === "budget_exceeded") {
+        state.budgetHits++;
+        ctx.emit({ type: "trace", step: "Qloo call budget reached", detail: "composing from the candidates already found" });
+        return { error: "The Qloo call budget for this plan is used up. Call compose_plan now with the candidates you already have." };
+      }
+      if (e instanceof QlooError && (e.kind === "auth" || e.kind === "rate_limited")) {
         state.fatal = e;
       }
       return { error: e instanceof Error ? e.message : String(e) };
@@ -115,7 +126,10 @@ export async function runLlmPlanner(ctx: PlanContext, model: LanguageModel, abor
     system: SYSTEM,
     prompt: buildPrompt(ctx),
     tools,
-    stopWhen: [stepCountIs(AGENT_MAX_STEPS), () => state.picks !== null || state.failures >= 2 || state.fatal !== null],
+    stopWhen: [
+      stepCountIs(AGENT_MAX_STEPS),
+      () => state.picks !== null || state.failures >= 2 || state.fatal !== null || state.budgetHits >= 2,
+    ],
     maxRetries: 1,
     abortSignal,
   });

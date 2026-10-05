@@ -48,7 +48,8 @@ export interface InsightsResponse {
   success: boolean;
   results: {
     entities?: QlooEntity[];
-    tags?: QlooTagResult[];
+    /** Raw tag objects (documented with `tag_id`); read them with parseTags(). */
+    tags?: unknown[];
   };
   duration?: number;
   query?: { explainability?: unknown };

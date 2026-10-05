@@ -54,8 +54,10 @@ export class MockQlooClient implements QlooClient {
   async tags(params: QueryParams): Promise<QlooTagResult[]> {
     const q = norm(String(params["filter.query"] ?? ""));
     const types = list(params["filter.tag.types"]);
+    const only = list(params["filter.results.tags"]);
     const take = Number(params.take ?? 20);
     return Object.entries(TAGS)
+      .filter(([id]) => only.length === 0 || only.includes(id))
       .filter(([id, name]) => !q || norm(name).includes(q) || norm(id).includes(q))
       .filter(([id]) => types.length === 0 || types.some((t) => id.startsWith(t)))
       .slice(0, take)
@@ -65,6 +67,7 @@ export class MockQlooClient implements QlooClient {
   async insights(params: QueryParams): Promise<InsightsResponse> {
     assertInsightsParams(params);
     const type = String(params["filter.type"]);
+    if (type === "urn:tag") return this.tagInsights(params);
     const countries = list(params["filter.release_country"]);
     const ratings = list(params["filter.content_rating"]);
     const mustTags = list(params["filter.tags"]);
@@ -110,5 +113,30 @@ export class MockQlooClient implements QlooClient {
     });
     scored.sort((a, b) => (b.query?.affinity ?? 0) - (a.query?.affinity ?? 0));
     return { success: true, results: { entities: scored.slice(0, take) }, duration: 2 };
+  }
+
+  /** Taste analysis: tags weighted by how strongly linked fixtures carry them (doc shape: results.tags[].tag_id). */
+  private tagInsights(params: QueryParams): InsightsResponse {
+    const seeds = list(params["signal.interests.entities"]);
+    const types = list(params["filter.tag.types"]);
+    const take = Number(params.take ?? 20);
+    const weight = new Map<string, number>();
+    for (const fx of this.fixtures) {
+      const w = fx.seed ? (seeds.includes(fx.id) ? 1 : 0) : seeds.reduce((a, s) => a + (fx.links?.[s.replace(/^mock-/, "")] ?? 0), 0);
+      if (w <= 0) continue;
+      for (const t of fx.tags) weight.set(t, (weight.get(t) ?? 0) + w);
+    }
+    const tags = [...weight.entries()]
+      .filter(([id]) => types.length === 0 || types.some((t) => id.startsWith(t + ":")))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, take)
+      .map(([id, w]) => ({
+        tag_id: id,
+        name: TAGS[id] ?? id,
+        types: ["urn:entity:movie", "urn:entity:tv_show"],
+        subtype: id.split(":").slice(0, 4).join(":"),
+        query: { affinity: Number(Math.min(1, w / 3).toFixed(3)) },
+      }));
+    return { success: true, results: { tags }, duration: 2 };
   }
 }

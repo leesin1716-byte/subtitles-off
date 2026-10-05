@@ -2,7 +2,8 @@
 
 import type { BudgetedClient } from "../qloo/budget";
 import { ageToBucket, type AgeBucket } from "../qloo/params";
-import { extractContributions } from "../qloo/parse";
+import { QlooError } from "../qloo/errors";
+import { extractContributions, parseTags } from "../qloo/parse";
 import type { EntityType, QlooEntity, QueryParams } from "../qloo/types";
 import { tierOf } from "./ladder";
 import { LANGUAGES, ratingsForAge, type LanguageProfile } from "./languages";
@@ -31,6 +32,7 @@ export interface PlanContext {
   musicTags: { id: string; name: string }[];
   avoidGenres: string[];
   excludeTagIds: string[];
+  tasteTags: string[];
   ratings?: string[];
   ageBucket?: AgeBucket;
   excludeIds: Set<string>;
@@ -54,6 +56,7 @@ export function createContext(input: PlanInput, client: BudgetedClient, emit: (e
     musicTags: [],
     avoidGenres,
     excludeTagIds: [],
+    tasteTags: [],
     ratings: ratingsForAge(age, refinement.familySafe),
     ageBucket: age !== undefined ? ageToBucket(age) : undefined,
     excludeIds: new Set(input.excludeIds ?? []),
@@ -120,8 +123,15 @@ export async function resolveFavorites(
   return { seeds, questions, missing };
 }
 
-const isMusicTag = (t: { id: string; types?: string[] }) =>
-  t.id.includes(":music") || (t.types ?? []).some((x) => x.includes("music"));
+/**
+ * Music genre tags. The docs show tag ids like `urn:tag:genre:media:horror` and, on tag results,
+ * `subtype` = tag type and `types` = entity types the tag applies to. Accept any of those signals so
+ * one wrong guess about the id format does not silently drop every artist.
+ */
+export const isMusicTag = (t: { id: string; types?: string[]; subtype?: string }) =>
+  t.id.includes(":music") ||
+  (t.subtype ?? "").includes("music") ||
+  (t.types ?? []).some((x) => x.includes("music") || x === "urn:entity:artist");
 
 /** Artists have no country filter in Qloo, so the language is pinned with music genre tags. */
 export async function findMusicTags(ctx: PlanContext): Promise<{ id: string; name: string }[]> {
@@ -138,13 +148,53 @@ export async function findMusicTags(ctx: PlanContext): Promise<{ id: string; nam
   return ctx.musicTags;
 }
 
-/** Looks up Qloo genre tag ids for the genres to avoid (one call), so Qloo can exclude them. */
+/** Documented id format for media genre tags, e.g. "Science Fiction" → urn:tag:genre:media:science_fiction. */
+export const genreTagId = (name: string) => `urn:tag:genre:media:${name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+
+/**
+ * Genre tags to exclude. Ids are built from the documented format, then confirmed with one
+ * /v2/tags call (filter.results.tags). Confirmed ids win; if the check finds none (or fails),
+ * the built ids are sent anyway, and the local filter also drops any result carrying them.
+ */
 export async function findAvoidTags(ctx: PlanContext): Promise<string[]> {
   if (!ctx.avoidGenres.length) return [];
+  const built = ctx.avoidGenres.map(genreTagId);
   const wanted = new Set(ctx.avoidGenres.map((g) => g.toLowerCase()));
-  const tags = await ctx.client.tags({ "filter.tag.types": "urn:tag:genre:media", take: 50 });
-  ctx.excludeTagIds = tags.filter((t) => wanted.has(t.name.toLowerCase())).map((t) => t.id);
+  let confirmed: string[] = [];
+  try {
+    const tags = await ctx.client.tags({ "filter.results.tags": built, take: built.length });
+    confirmed = tags.filter((t) => built.includes(t.id) || wanted.has(t.name.toLowerCase())).map((t) => t.id);
+  } catch (e) {
+    if (e instanceof QlooError && (e.kind === "auth" || e.kind === "rate_limited" || e.kind === "budget_exceeded")) throw e;
+  }
+  ctx.excludeTagIds = confirmed.length ? [...new Set(confirmed)] : built;
+  ctx.emit({
+    type: "trace",
+    step: "Genres to avoid mapped to Qloo tags",
+    detail: confirmed.length ? `${confirmed.length} of ${built.length} confirmed by Qloo` : "not confirmed by Qloo; using the documented ids",
+  });
   return ctx.excludeTagIds;
+}
+
+/**
+ * Taste analysis (Insights with filter.type=urn:tag): the genre tags Qloo associates with the
+ * favorites. Shown on the plan as "your taste, as Qloo sees it". Never fatal.
+ */
+export async function findTasteTags(ctx: PlanContext): Promise<string[]> {
+  if (!ctx.seeds.length) return [];
+  try {
+    const res = await ctx.client.insights({
+      "filter.type": "urn:tag",
+      "filter.tag.types": "urn:tag:genre:media",
+      "signal.interests.entities": ctx.seeds.map((s) => s.entityId),
+      take: 6,
+    });
+    ctx.tasteTags = parseTags(res).map((t) => t.name).filter(Boolean).slice(0, 5);
+  } catch (e) {
+    if (e instanceof QlooError && (e.kind === "auth" || e.kind === "rate_limited")) throw e;
+    ctx.tasteTags = [];
+  }
+  return ctx.tasteTags;
 }
 
 export function buildParams(ctx: PlanContext, domain: Domain, stage: number): QueryParams | null {
@@ -192,7 +242,8 @@ export function toCandidate(e: QlooEntity, domain: Domain, seeds: Seed[]): Candi
 function passesLocalFilters(ctx: PlanContext, c: Candidate): boolean {
   if (ctx.excludeIds.has(c.entityId) || ctx.seeds.some((s) => s.entityId === c.entityId)) return false;
   const avoid = ctx.avoidGenres.map((g) => g.toLowerCase());
-  if (avoid.length && c.tags.some((t) => avoid.includes(t.name.toLowerCase()))) return false;
+  const avoidIds = new Set([...ctx.excludeTagIds, ...ctx.avoidGenres.map(genreTagId)]);
+  if (avoid.length && c.tags.some((t) => avoid.includes(t.name.toLowerCase()) || avoidIds.has(t.id))) return false;
   const seen = ctx.refinement.seenTitles.map(norm);
   if (seen.some((s) => s && norm(c.name) === s)) return false;
   return true;

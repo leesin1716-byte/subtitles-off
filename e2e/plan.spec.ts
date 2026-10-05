@@ -9,6 +9,7 @@ test("S1: an example person gets a four-week Korean plan with reasons", async ({
   await expect(page.getByText(/^Week [1-4]$/)).toHaveCount(4);
   await expect(page.getByText("Because you like").first()).toBeVisible();
   await expect(page.getByText(/With family:/).first()).toBeVisible();
+  await expect(page.getByText("Your taste, as Qloo sees it:")).toBeVisible();
   await expect(page).toHaveURL(/l=ko/);
   await page.getByText(/How this plan was made/).click();
   await expect(page.getByText(/Qloo #1/).first()).toBeVisible();
@@ -23,7 +24,9 @@ test("S2: an ambiguous favorite is confirmed, then the plan is compared with a g
   await expect(page.getByRole("heading", { name: /Four weeks of Spanish/ })).toBeVisible();
   await page.getByRole("button", { name: "Compare with a generic AI list" }).click();
   await expect(page.getByText("This plan (Qloo-grounded)")).toBeVisible();
-  await expect(page.getByText("average affinity")).toHaveCount(2);
+  await expect(page.getByText("From a country that speaks the language")).toBeVisible();
+  await expect(page.getByText("Favorites it draws on (Qloo explainability)")).toBeVisible();
+  await expect(page.getByText(/so it should win on that row/)).toBeVisible();
   await page.screenshot({ path: "test-results/s2-compare.png", fullPage: true });
 });
 

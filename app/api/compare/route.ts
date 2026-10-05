@@ -19,10 +19,15 @@ export async function POST(request: Request) {
   }
   const parsed = compareInputSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ code: "bad_request", message: "Invalid comparison request." }, { status: 400 });
+  const model = getModel()?.model;
+  // On live data the baseline must come from a real LLM; a canned list would be a straw man.
+  if (!model && qloo.client.mode === "live") {
+    return Response.json({ code: "no_llm", message: "The comparison needs an LLM, and none is configured on this deployment." }, { status: 409 });
+  }
   try {
     const result = await runCompare(parsed.data, {
       client: qloo.client,
-      model: getModel()?.model,
+      model,
       abortSignal: AbortSignal.any([request.signal, AbortSignal.timeout(25_000)]),
     });
     return Response.json(result);

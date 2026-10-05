@@ -3,7 +3,7 @@
 import { QlooError } from "./errors";
 import type { EntityType, QlooClient, QueryParams } from "./types";
 
-export const PLAN_CALL_BUDGET = 16;
+export const PLAN_CALL_BUDGET = 18;
 
 export interface CallRecord {
   n: number;

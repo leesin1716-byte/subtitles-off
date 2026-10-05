@@ -128,7 +128,7 @@ describe("compare panel", () => {
     expect(r.baselineSource).toBe("canned");
     expect(r.baseline.map((b) => b.name)).toEqual(["Money Heist", "Elite", "Pan's Labyrinth"]);
     expect(r.baseline.every((b) => typeof b.affinity === "number")).toBe(true);
-    expect(r.groundedMean!).toBeGreaterThan(r.baselineMean!);
+    expect(r.groundedStats.affinity!).toBeGreaterThan(r.baselineStats.affinity!);
     expect(r.calls).toBeLessThanOrEqual(10);
   });
 

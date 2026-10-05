@@ -37,14 +37,22 @@ export function parseRefinement(text: string | undefined): Refinement {
   }
   if (/\bmore\s+(music|songs?|artists?)\b/.test(t)) out.moreMusic = true;
 
-  // "already seen Squid Game and Kingdom", "watched Parasite"
-  const seen = text.match(/(?:already\s+(?:seen|watched|saw)|seen|watched)\s+([^.;!?]+)/i);
-  if (seen) {
-    out.seenTitles = seen[1]
-      .split(/,|\band\b|&/i)
-      .map((s) => s.trim().replace(/^the\s+show\s+|^the\s+movie\s+/i, ""))
-      .filter((s) => s.length > 1);
+  // Titles count as seen only after "already seen/watched/saw" ("she already watched Squid Game and Kingdom")
+  // or when quoted after seen/watched/saw ('we watched "Parasite"'). A bare "watched" is too loose:
+  // "we watched together" must not turn "together" into a title.
+  const titles: string[] = [];
+  const already = text.match(/already\s+(?:seen|watched|saw)\s+([^.;!?]+)/i);
+  if (already) {
+    titles.push(
+      ...already[1]
+        .split(/,|\band\b|&/i)
+        .map((s) => s.trim().replace(/^the\s+show\s+|^the\s+movie\s+/i, "").replace(/^["“]|["”]$/g, "")),
+    );
   }
+  for (const m of text.matchAll(/(?:seen|watched|saw)\s+((?:["“][^"”]+["”]\s*(?:,|and|&)?\s*)+)/gi)) {
+    for (const q of m[1].matchAll(/["“]([^"”]+)["”]/g)) titles.push(q[1].trim());
+  }
+  out.seenTitles = unique(titles.filter((s) => s.length > 1));
   return out;
 }
 

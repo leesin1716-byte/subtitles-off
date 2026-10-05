@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { runPlan } from "@/lib/plan/runner";
 import { MockQlooClient } from "@/lib/qloo/mock";
 import { QlooError } from "@/lib/qloo/errors";
+import { PLAN_CALL_BUDGET } from "@/lib/qloo/budget";
 import { FIXTURES } from "@/lib/qloo/fixtures";
 import type { Plan, PlanEvent, PlanInput } from "@/lib/plan/types";
 import type { QlooClient } from "@/lib/qloo/types";
@@ -63,7 +64,7 @@ describe("S1 heritage learner (Mina, Korean)", () => {
     expect([...tiers].sort()).toEqual(tiers);
 
     // provenance and budget
-    expect(plan!.calls.length).toBeLessThanOrEqual(16);
+    expect(plan!.calls.length).toBeLessThanOrEqual(PLAN_CALL_BUDGET);
     expect(plan!.applied.join(" | ")).toMatch(/Release country: South Korea/);
     expect(plan!.applied.join(" | ")).toMatch(/Content ratings: .*TV-14/);
   });
@@ -135,14 +136,14 @@ describe("widening and failure states", () => {
     expect(events.at(-1)).toMatchObject({ type: "error", code: "qloo_auth" });
   });
 
-  it("keeps every run within the 16-call budget even for five favorites", async () => {
+  it("keeps every run within the per-plan call budget even for five favorites", async () => {
     const { plan } = await run({
       language: "ja",
       level: "beginner",
       favorites: ["Zelda", "Phoebe Bridgers", "Avatar", "Minecraft", "Stranger Things"],
       avoid: "horror",
     });
-    expect(plan!.calls.length).toBeLessThanOrEqual(16);
+    expect(plan!.calls.length).toBeLessThanOrEqual(PLAN_CALL_BUDGET);
     expect(plan!.weeks.flatMap((w) => w.items).some((i) => i.name === "Joe Hisaishi")).toBe(true);
   });
 });

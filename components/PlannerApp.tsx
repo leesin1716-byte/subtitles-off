@@ -3,7 +3,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PERSONAS } from "@/lib/plan/personas";
-import { encodeInput } from "@/lib/plan/share";
+import { addSeen, encodeInput } from "@/lib/plan/share";
+import { readPlanStream } from "@/lib/plan/stream";
 import type { AmbiguityQuestion, LanguageCode, Level, Plan, PlanEvent, PlanInput } from "@/lib/plan/types";
 import type { CallRecord } from "@/lib/qloo/budget";
 import { PlanView } from "./PlanView";
@@ -54,34 +55,13 @@ export function PlannerApp({ mode, initialInput }: { mode: "live" | "mock"; init
       setStatus("error");
       return;
     }
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let finished: Status = "error";
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        const ev = JSON.parse(line) as PlanEvent;
-        if (ev.type === "trace") setTrace((t) => [...t, { kind: "step", text: ev.step, detail: ev.detail }]);
-        else if (ev.type === "qloo") setTrace((t) => [...t, { kind: "qloo", call: ev.call as CallRecord }]);
-        else if (ev.type === "needs_input") {
-          setQuestions(ev.questions);
-          finished = "needs_input";
-        } else if (ev.type === "plan") {
-          setPlan(ev.plan);
-          finished = "done";
-        } else if (ev.type === "error") {
-          setError({ code: ev.code, message: ev.message });
-          finished = "error";
-        }
-      }
-    }
-    if (finished === "error") setError((e) => e ?? { code: "incomplete", message: "The plan stopped before it finished. Please try again." });
+    const finished = await readPlanStream(res.body, (ev: PlanEvent) => {
+      if (ev.type === "trace") setTrace((t) => [...t, { kind: "step", text: ev.step, detail: ev.detail }]);
+      else if (ev.type === "qloo") setTrace((t) => [...t, { kind: "qloo", call: ev.call as CallRecord }]);
+      else if (ev.type === "needs_input") setQuestions(ev.questions);
+      else if (ev.type === "plan") setPlan(ev.plan);
+      else if (ev.type === "error") setError({ code: ev.code, message: ev.message });
+    });
     setStatus(finished);
   }, []);
 
@@ -300,7 +280,7 @@ export function PlannerApp({ mode, initialInput }: { mode: "live" | "mock"; init
             input={lastInput}
             trace={trace}
             onRefine={(text) => void run({ ...lastInput, refinement: text })}
-            onSeen={(id) => void run({ ...lastInput, excludeIds: [...(lastInput.excludeIds ?? []), id] })}
+            onSeen={(id) => void run({ ...lastInput, excludeIds: addSeen(lastInput.excludeIds, id) })}
           />
         )}
       </div>

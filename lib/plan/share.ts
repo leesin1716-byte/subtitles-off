@@ -46,3 +46,9 @@ export function decodeInput(params: Params): PlanInput | undefined {
   const parsed = planInputSchema.safeParse(candidate);
   return parsed.success ? parsed.data : undefined;
 }
+
+/** The API accepts up to 30 removed titles ("Seen it"); past that, the oldest removals drop off. */
+export const MAX_SEEN = 30;
+export function addSeen(prev: string[] | undefined, id: string): string[] {
+  return [...(prev ?? []).filter((x) => x !== id), id].slice(-MAX_SEEN);
+}

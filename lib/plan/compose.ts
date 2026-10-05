@@ -11,6 +11,23 @@ export interface Pick {
 
 // Hangul, Kana and CJK ideographs: the planner must not write target-language text.
 const NON_ENGLISH_SCRIPT = /[ᄀ-ᇿ぀-ヿ㄰-㆏㐀-䶿一-鿿가-힯]/;
+// Spanish and French function words that do not double as English words. Titles such as
+// "La La Land" or "Amélie" stay allowed; two or more of these words means a non-English sentence.
+const ROMANCE_FUNCTION_WORDS = new Set(
+  "el los las del al y que por para con una unos unas es muy pero como también les des du au aux et est une pour avec dans qui sur très mais aussi".split(" "),
+);
+const ENGLISH_FUNCTION_WORDS = new Set(
+  "the a an and of with as you your like for to in if same this its it is that on from but who fans fan".split(" "),
+);
+
+/** True when a planner reason is not plain English (the app never writes target-language text). */
+export function isNotEnglish(text: string): boolean {
+  if (NON_ENGLISH_SCRIPT.test(text)) return true;
+  const words = text.toLowerCase().match(/[a-zà-ÿ']+/g) ?? [];
+  const romance = words.filter((w) => ROMANCE_FUNCTION_WORDS.has(w)).length;
+  const english = words.filter((w) => ENGLISH_FUNCTION_WORDS.has(w)).length;
+  return romance >= 2 && romance >= english;
+}
 
 export function allCandidates(ctx: PlanContext): Candidate[] {
   return [...ctx.byDomain.tv_show, ...ctx.byDomain.movie, ...ctx.byDomain.artist];
@@ -26,7 +43,7 @@ export function validatePicks(ctx: PlanContext, picks: Pick[]): { ok: boolean; e
     if (seen.has(p.entityId)) errors.push(`${p.entityId} is listed twice`);
     seen.add(p.entityId);
     if (p.reason && p.reason.length > 160) errors.push(`reason for ${p.entityId} is longer than 160 characters`);
-    if (p.reason && NON_ENGLISH_SCRIPT.test(p.reason)) errors.push(`reason for ${p.entityId} must be in English only`);
+    if (p.reason && isNotEnglish(p.reason)) errors.push(`reason for ${p.entityId} must be in English only`);
   }
   const chosen = picks.map((p) => registry.get(p.entityId)).filter(Boolean) as Candidate[];
   const screenAvailable = ctx.byDomain.tv_show.length + ctx.byDomain.movie.length;
@@ -75,5 +92,7 @@ export function assemblePlan(ctx: PlanContext, picks: Pick[], planner: Plan["pla
     mode: ctx.client.mode,
     calls: ctx.client.calls,
     applied: ctx.applied,
+    tasteTags: ctx.tasteTags,
+    llmConfigured: false,
   };
 }

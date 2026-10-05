@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import type { Plan, PlanInput, PlanItem } from "@/lib/plan/types";
-import type { CompareResult } from "@/lib/plan/compare";
+import type { CompareResult, ScoredItem } from "@/lib/plan/compare";
 import { encodeInput } from "@/lib/plan/share";
 import { TracePanel, type TraceLine } from "./TracePanel";
 
@@ -56,8 +56,15 @@ export function PlanView({
               </li>
             ))}
           </ul>
+          {plan.tasteTags.length > 0 && (
+            <p className="mt-3 text-sm">
+              <span className="text-ink-soft">Your taste, as Qloo sees it: </span>
+              {plan.tasteTags.join(" · ")}
+            </p>
+          )}
           <p className="mt-3 text-sm text-ink-soft">
             {plan.planner === "llm" ? "Agent-selected" : "Rule-selected"} from {plan.calls.length} Qloo calls. {plan.plannerNote}
+            {plan.servedFromCache && ` Saved plan from ${plan.servedFromCache.slice(0, 10)}.`}
           </p>
           <div className="mt-4 flex flex-wrap gap-2 print:hidden">
             <button type="button" className="btn-secondary" onClick={share}>
@@ -117,7 +124,7 @@ export function PlanView({
         </div>
       </section>
 
-      <ComparePanel plan={plan} />
+      {(plan.mode === "mock" || plan.llmConfigured) && <ComparePanel plan={plan} />}
 
       <details className="print:hidden">
         <summary className="cursor-pointer text-sm font-medium">How this plan was made ({plan.calls.length} Qloo calls)</summary>
@@ -166,7 +173,12 @@ function ItemRow({ item, onSeen }: { item: PlanItem; onSeen: (id: string) => voi
         ) : item.affinity !== undefined ? (
           <p className="mt-1.5 text-sm text-ink-soft">Qloo affinity {item.affinity.toFixed(2)}</p>
         ) : null}
-        {item.note && <p className="mt-1.5 text-sm italic">“{item.note}”</p>}
+        {item.note && (
+          <p className="mt-1.5 text-sm">
+            <span className="text-ink-soft">Agent note: </span>
+            {item.note}
+          </p>
+        )}
         <p className="mt-1.5 text-sm text-ink-soft">{item.tip}</p>
         {item.activity && <p className="mt-1 text-sm">With family: {item.activity}</p>}
       </div>
@@ -217,27 +229,44 @@ function ComparePanel({ plan }: { plan: Plan }) {
     <section className="card p-5 print:hidden">
       <h3 className="font-semibold">Why not just ask a chatbot?</h3>
       <p className="text-sm text-ink-soft">
-        Ask a general AI for {plan.languageLabel} shows and it tends to list the same global hits. Here Qloo scores that list and this plan against the
-        same favorites.
+        Ask a general AI for {plan.languageLabel} shows and it tends to list the same global hits. Here both lists are measured the same way
+        against your favorites.
       </p>
       {state === "idle" && (
         <button type="button" className="btn-secondary mt-3" onClick={go} disabled={screen.length === 0}>
           Compare with a generic AI list
         </button>
       )}
-      {state === "loading" && <p className="mt-3 text-sm">Scoring both lists with Qloo…</p>}
+      {state === "loading" && <p className="mt-3 text-sm">Measuring both lists with Qloo…</p>}
       {state === "error" && <p className="mt-3 text-sm">{message}</p>}
       {state === "done" && result && (
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <ScoreList
-            title={result.baselineSource === "llm" ? "Generic AI suggestions" : "Typical generic picks"}
-            subtitle={result.baselineSource === "llm" ? "Asked an LLM without Qloo" : "No LLM configured: the usual global hits"}
-            items={result.baseline}
-            mean={result.baselineMean}
-          />
-          <ScoreList title="This plan (Qloo-grounded)" subtitle="Picked from Qloo taste matches" items={result.grounded} mean={result.groundedMean} strong />
-          <p className="text-xs text-ink-soft sm:col-span-2">
-            Scores are Qloo affinity to the same {plan.seeds.length} favorites (higher means a closer taste match), from {result.calls} Qloo calls.
+        <div className="mt-4 space-y-4">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-ink-soft">
+                <th className="py-1 font-normal">Measure</th>
+                <th className="py-1 font-normal">{result.baselineSource === "llm" ? "Generic AI" : "Typical picks"}</th>
+                <th className="py-1 font-normal">This plan</th>
+              </tr>
+            </thead>
+            <tbody className="tabular-nums">
+              <StatRow label="From a country that speaks the language" a={pct(result.baselineStats.languageMatch)} b={pct(result.groundedStats.languageMatch)} />
+              <StatRow label="Favorites it draws on (Qloo explainability)" a={`${result.baselineStats.favoritesCovered} of ${result.seedCount}`} b={`${result.groundedStats.favoritesCovered} of ${result.seedCount}`} />
+              <StatRow label="Average popularity percentile" a={pct(result.baselineStats.popularity)} b={pct(result.groundedStats.popularity)} />
+              <StatRow label="Average taste affinity*" a={num(result.baselineStats.affinity)} b={num(result.groundedStats.affinity)} />
+            </tbody>
+          </table>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <ScoreList
+              title={result.baselineSource === "llm" ? "Generic AI suggestions" : "Typical generic picks"}
+              subtitle={result.baselineSource === "llm" ? "Asked an LLM without Qloo, then looked each title up in Qloo" : "Sample mode: a fixed list of the usual global hits"}
+              items={result.baseline}
+            />
+            <ScoreList title="This plan (Qloo-grounded)" subtitle="Picked from Qloo taste matches" items={result.grounded} strong />
+          </div>
+          <p className="text-xs text-ink-soft">
+            *The plan was chosen by Qloo affinity, so it should win on that row; the other rows do not depend on it. Popularity is
+            Qloo&apos;s percentile, where a high number means a global hit. {result.calls} Qloo calls.
           </p>
         </div>
       )}
@@ -245,31 +274,37 @@ function ComparePanel({ plan }: { plan: Plan }) {
   );
 }
 
-function ScoreList({
-  title,
-  subtitle,
-  items,
-  mean,
-  strong,
-}: {
-  title: string;
-  subtitle: string;
-  items: CompareResult["baseline"];
-  mean?: number;
-  strong?: boolean;
-}) {
+function StatRow({ label, a, b }: { label: string; a: string; b: string }) {
+  return (
+    <tr className="border-t border-[var(--line)]">
+      <td className="py-1.5 pr-2">{label}</td>
+      <td className="py-1.5 pr-2 text-ink-soft">{a}</td>
+      <td className="py-1.5 font-semibold">{b}</td>
+    </tr>
+  );
+}
+
+const pct = (x: number | undefined) => (x === undefined ? "—" : `${Math.round(x * 100)}%`);
+const num = (x: number | undefined) => (x === undefined ? "—" : x.toFixed(2));
+
+function ScoreList({ title, subtitle, items, strong }: { title: string; subtitle: string; items: ScoredItem[]; strong?: boolean }) {
   return (
     <div className={`rounded-md border p-4 ${strong ? "border-[var(--ink)]" : "border-[var(--line)]"}`}>
       <p className="font-semibold">{title}</p>
       <p className="text-xs text-ink-soft">{subtitle}</p>
-      <p className="mt-2 font-display text-3xl">{mean !== undefined ? mean.toFixed(2) : "—"}</p>
-      <p className="text-xs text-ink-soft">average affinity</p>
       <ul className="mt-3 space-y-2 text-sm">
         {items.map((i) => (
           <li key={i.entityId ?? i.name}>
             <div className="flex justify-between gap-2">
-              <span className="truncate">{i.name}</span>
-              <span className="tabular-nums text-ink-soft">{i.affinity !== undefined ? i.affinity.toFixed(2) : i.found ? "n/a" : "not in Qloo"}</span>
+              <span className="min-w-0">
+                <span className="block truncate">
+                  {i.name}
+                  {i.year ? <span className="text-ink-soft"> ({i.year})</span> : null}
+                </span>
+                {i.asked && <span className="block text-xs text-ink-soft">asked for “{i.asked}”</span>}
+                {i.found && i.inLanguage === false && <span className="block text-xs text-ink-soft">not from a target-language country</span>}
+              </span>
+              <span className="shrink-0 tabular-nums text-ink-soft">{i.affinity !== undefined ? i.affinity.toFixed(2) : i.found ? "n/a" : "not in Qloo"}</span>
             </div>
             <div className="meter" aria-hidden>
               <span style={{ width: `${Math.round((i.affinity ?? 0) * 100)}%` }} />
