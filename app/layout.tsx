@@ -7,10 +7,16 @@ const display = Fraunces({ variable: "--font-display", subsets: ["latin"], axes:
 const sans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const mono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
+const description =
+  "An agent that turns a few favorite games, singers and shows into a four-week plan of films, TV and music in the language you want to keep, grounded in Qloo taste data.";
+const siteUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: "Subtitles Off — keep a language alive through what you love",
-  description:
-    "An agent that turns a few favorite games, singers and shows into a four-week plan of films, TV and music in the language you want to keep, grounded in Qloo taste data.",
+  description,
+  openGraph: { type: "website", siteName: "Subtitles Off", title: "Subtitles Off", description },
+  twitter: { card: "summary_large_image", title: "Subtitles Off", description },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
