@@ -57,10 +57,10 @@ export class BudgetedClient implements QlooClient {
     if (this.used >= this.limit) {
       throw new QlooError("budget_exceeded", `Qloo call budget of ${this.limit} per plan is used up`);
     }
-    this.used++;
+    const n = ++this.used;
     const started = Date.now();
     const result = await fn();
-    const record: CallRecord = { n: this.used, endpoint, params, ms: Date.now() - started, resultCount: count(result) };
+    const record: CallRecord = { n, endpoint, params, ms: Date.now() - started, resultCount: count(result) };
     this.calls.push(record);
     this.onCall?.(record);
     return result;
