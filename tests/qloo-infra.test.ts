@@ -54,6 +54,9 @@ describe("llmEnabled", () => {
     expect(llmEnabled({})).toBe(false);
     expect(llmEnabled({ AI_GATEWAY_API_KEY: "x" })).toBe(true);
     expect(llmEnabled({ VERCEL_OIDC_TOKEN: "x" })).toBe(true);
+    // on Vercel the OIDC token may arrive only as a request header
+    expect(llmEnabled({ VERCEL: "1" })).toBe(true);
+    expect(llmEnabled({ VERCEL: "1", LLM_MODE: "off" })).toBe(false);
     expect(llmEnabled({ AI_GATEWAY_API_KEY: "x", LLM_MODE: "off" })).toBe(false);
   });
 });

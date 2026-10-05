@@ -30,9 +30,15 @@ export function resolveQlooMode(env: Env): ModeResolution {
   return { ok: true, mode: key ? "live" : "mock" };
 }
 
+/**
+ * On Vercel the AI Gateway authenticates with the OIDC token, which @vercel/oidc reads from the
+ * `x-vercel-oidc-token` request header first and only then from process.env. The env var can be
+ * absent at runtime, so running on Vercel (VERCEL=1) counts as "LLM available". If the gateway
+ * still refuses, the runner falls back to the rule planner and says so in the plan note.
+ */
 export function llmEnabled(env: Env): boolean {
   if (env.LLM_MODE?.trim().toLowerCase() === "off") return false;
-  return Boolean(env.AI_GATEWAY_API_KEY?.trim() || env.VERCEL_OIDC_TOKEN?.trim());
+  return Boolean(env.AI_GATEWAY_API_KEY?.trim() || env.VERCEL_OIDC_TOKEN?.trim() || env.VERCEL === "1");
 }
 
 export function llmModelId(env: Env): string {
