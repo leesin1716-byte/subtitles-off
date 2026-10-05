@@ -53,6 +53,13 @@ describe("HttpQlooClient", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it("reads the nested error body the hackathon host actually returns", async () => {
+    const fetchImpl = vi.fn(async () => json(401, { error: { reason: "No API key found in request", message: "Unauthorized", code: 401 } }));
+    const err = await client(fetchImpl as unknown as typeof fetch).search("x", []).catch((e) => e);
+    expect(err).toMatchObject({ kind: "auth", status: 401 });
+    expect(err.message).toBe("Qloo 401: No API key found in request");
+  });
+
   it("treats a 404 from /search as an empty result", async () => {
     const fetchImpl = vi.fn(async () => json(404, { code: 404, reason: "No results" }));
     const res = await client(fetchImpl as unknown as typeof fetch).search("zzzz", ["urn:entity:movie"]);

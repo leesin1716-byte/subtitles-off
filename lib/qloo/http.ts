@@ -104,8 +104,11 @@ export class HttpQlooClient implements QlooClient {
     if (!res.ok) {
       let reason = res.statusText;
       try {
-        const body = (await res.json()) as { reason?: string; message?: string; error?: string };
-        reason = body.reason ?? body.message ?? body.error ?? reason;
+        // Observed on the hackathon host: {"error":{"reason":"No API key found in request","message":"Unauthorized","code":401}}
+        type ErrBody = { reason?: string; message?: string };
+        const body = (await res.json()) as ErrBody & { error?: string | ErrBody };
+        const inner = typeof body.error === "object" ? body.error : undefined;
+        reason = inner?.reason ?? inner?.message ?? body.reason ?? body.message ?? (typeof body.error === "string" ? body.error : reason);
       } catch {
         /* non-JSON error body */
       }
