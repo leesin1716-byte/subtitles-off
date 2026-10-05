@@ -9,7 +9,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "check:bundle": "node scripts/check-bundle.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "smoke:live": "vitest run --config vitest.live.config.mts"
   },
   "dependencies": {
     "@vercel/functions": "^3.9.11",
