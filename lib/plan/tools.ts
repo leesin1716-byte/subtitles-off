@@ -21,6 +21,13 @@ export const SEARCH_TYPES: EntityType[] = [
 export const DOMAINS: Domain[] = ["tv_show", "movie", "artist"];
 export const MAX_WIDEN_STAGE = 3;
 const TAKE = 12;
+/**
+ * Films and shows are fetched wider, then kept only when their first release country is a target
+ * country. `filter.release_country` matches any country an entity was released in: on 10-11 a
+ * Japanese plan got Luca and Onward (["United States","Japan"]) and a Korean one Hotel Transylvania 3.
+ * In the first 30 Korean film results 16 listed South Korea first; Spanish films only 5 of 30.
+ */
+const SCREEN_TAKE = 30;
 
 export interface PlanContext {
   input: PlanInput;
@@ -167,6 +174,7 @@ export async function findMusicTags(ctx: PlanContext): Promise<{ id: string; nam
   ctx.musicTags = lists
     .flat()
     .filter(isMusicTag)
+    .filter((t) => ctx.profile.musicTagName.test(t.name))
     .filter((t) => !seen.has(t.id) && seen.add(t.id))
     .slice(0, 6)
     .map((t) => ({ id: t.id, name: t.name }));
@@ -235,14 +243,35 @@ export function buildParams(ctx: PlanContext, domain: Domain, stage: number): Qu
     "signal.interests.tags": useTags ? seedTags : undefined,
     "signal.demographics.age": ctx.ageBucket,
     "feature.explainability": useEntities ? true : undefined,
-    take: TAKE,
+    take: domain === "artist" ? TAKE : SCREEN_TAKE,
   };
   if (domain === "artist") {
     if (!ctx.musicTags.length) return null;
     return { ...common, "filter.tags": ctx.musicTags.map((t) => t.id), "operator.filter.tags": "union" };
   }
-  const countries = stage >= 1 ? [...ctx.profile.countries, ...ctx.profile.widenCountries] : ctx.profile.countries;
-  return { ...common, "filter.release_country": countries, "filter.content_rating": ctx.ratings };
+  return { ...common, "filter.release_country": targetCountries(ctx, stage), "filter.content_rating": ctx.ratings };
+}
+
+const targetCountries = (ctx: PlanContext, stage: number) =>
+  stage >= 1 ? [...ctx.profile.countries, ...ctx.profile.widenCountries] : ctx.profile.countries;
+
+/** First listed release country (Insights gives an array; /search has shown a plain string). */
+export function firstCountry(e: QlooEntity): string | undefined {
+  const rc: unknown = e.properties?.release_country;
+  if (Array.isArray(rc)) return typeof rc[0] === "string" ? rc[0] : undefined;
+  return typeof rc === "string" ? rc.split(",")[0].trim() : undefined;
+}
+
+/**
+ * Keeps titles whose first release country is a target (unknown country counts as a match), up to
+ * TAKE. If fewer than 3 qualify, the Qloo order is kept as it was so a thin language still gets a plan.
+ */
+export function preferHomeCountry(entities: QlooEntity[], countries: string[]): QlooEntity[] {
+  const home = entities.filter((e) => {
+    const c = firstCountry(e);
+    return c === undefined || countries.includes(c);
+  });
+  return (home.length >= 3 ? home : entities).slice(0, TAKE);
 }
 
 export function toCandidate(e: QlooEntity, domain: Domain, seeds: Seed[]): Candidate {
@@ -278,7 +307,8 @@ async function fetchDomain(ctx: PlanContext, domain: Domain, stage: number): Pro
   const params = buildParams(ctx, domain, stage);
   if (!params) return [];
   const res = await ctx.client.insights(params);
-  const fresh = (res.results.entities ?? []).map((e) => toCandidate(e, domain, ctx.seeds)).filter((c) => passesLocalFilters(ctx, c));
+  const entities = res.results.entities ?? [];
+  const fresh = (domain === "artist" ? entities : preferHomeCountry(entities, targetCountries(ctx, stage))).map((e) => toCandidate(e, domain, ctx.seeds)).filter((c) => passesLocalFilters(ctx, c));
   const known = new Set(ctx.byDomain[domain].map((c) => c.entityId));
   ctx.byDomain[domain] = [...ctx.byDomain[domain], ...fresh.filter((c) => !known.has(c.entityId))];
   return ctx.byDomain[domain];

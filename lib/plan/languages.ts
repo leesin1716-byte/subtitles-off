@@ -10,22 +10,29 @@ export interface LanguageProfile {
   widenCountries: string[];
   /** /v2/tags filter.query terms used to find music genre tags for this language */
   musicTagQueries: string[];
+  /**
+   * Tag names that really belong to the language. /v2/tags search is fuzzy: on 10-11 "j-pop" also
+   * returned Jangle Pop and Jazz Pop, "french pop" returned plain Pop, "chanson" Russian Chanson.
+   */
+  musicTagName: RegExp;
 }
 
 export const LANGUAGES: Record<LanguageCode, LanguageProfile> = {
-  ko: { label: "Korean", countries: ["South Korea"], widenCountries: [], musicTagQueries: ["k-pop", "korean"] },
+  ko: { label: "Korean", countries: ["South Korea"], widenCountries: [], musicTagQueries: ["k-pop", "korean"], musicTagName: /\bk\W*pop|korean/i },
   es: {
     label: "Spanish",
     countries: ["Spain", "Mexico", "Argentina", "Colombia"],
     widenCountries: ["Chile", "Peru", "Uruguay", "Cuba"],
     musicTagQueries: ["rock en español", "latin pop", "spanish"],
+    musicTagName: /espa[nñ]ol|latin|idioma|spanish/i,
   },
-  ja: { label: "Japanese", countries: ["Japan"], widenCountries: [], musicTagQueries: ["j-pop", "japanese"] },
+  ja: { label: "Japanese", countries: ["Japan"], widenCountries: [], musicTagQueries: ["j-pop", "japanese"], musicTagName: /^j\W*pops?$|japanese/i },
   fr: {
     label: "French",
     countries: ["France", "Belgium"],
     widenCountries: ["Canada", "Switzerland"],
     musicTagQueries: ["french pop", "chanson"],
+    musicTagName: /french|fran[cç]aise?|^chansons?$|nouvelle chanson/i,
   },
 };
 
