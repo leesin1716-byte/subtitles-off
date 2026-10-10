@@ -104,6 +104,8 @@ describe("warmPersonaPlans (daily cron)", () => {
     const d: PlanDeps = { getClient: () => ({ ok: true, client }), getModel: () => undefined, store };
     expect(await warmPersonaPlans(d)).toEqual({ mina: "built", sam: "built", jordan: "built" });
     expect(store.data.size).toBe(4); // Sam: the question and the plan for Qloo's first match
+    // Sam's follow-up keeps the pinned Breaking Bad and adds the answer for The Office.
+    expect([...store.data.keys()].some((k) => k.includes("breaking bad=D03D0913") && k.includes("the office=mock-the-office-us"))).toBe(true);
     expect(await warmPersonaPlans(d)).toEqual({ mina: "cached", sam: "cached", jordan: "cached" });
   });
 });

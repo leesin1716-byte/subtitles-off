@@ -119,7 +119,7 @@ export async function warmPersonaPlans(deps: PlanDeps): Promise<Record<string, W
         if (err && err.type === "error") return [p.id, `failed: ${err.code}`];
         const q = events.find((e) => e.type === "needs_input");
         if (!q || q.type !== "needs_input") return [p.id, events.some((e) => e.type === "plan") ? status : "failed: no plan"];
-        input = { ...input, choices: Object.fromEntries(q.questions.map((x) => [x.favorite, x.options[0].entityId])) };
+        input = { ...input, choices: { ...input.choices, ...Object.fromEntries(q.questions.map((x) => [x.favorite, x.options[0].entityId])) } };
       }
       return [p.id, "failed: no plan"];
     }),

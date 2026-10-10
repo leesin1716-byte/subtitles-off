@@ -40,7 +40,9 @@ export class HttpQlooClient implements QlooClient {
 
   async search(query: string, types: EntityType[], take = 3): Promise<SearchResponse> {
     try {
-      return await this.get<SearchResponse>("/search", { query, types, take });
+      const res = await this.get<SearchResponse>("/search", { query, types, take });
+      // Live /search gives the type only as `types: [...]` (no `subtype`, checked 10-11); the planner reads `subtype`.
+      return { ...res, results: (res.results ?? []).map((e) => ({ ...e, subtype: e.subtype ?? e.types?.[0] ?? "" })) };
     } catch (e) {
       // /search may answer "no results" with a 404 body; treat it as an empty list.
       if (e instanceof QlooError && e.kind === "not_found") return { success: true, results: [] };

@@ -81,7 +81,27 @@ function toSeed(query: string, e: QlooEntity): Seed {
   };
 }
 
-/** /search each favorite; ask the person when two results share the exact title. */
+/**
+ * Popularity lead that settles a same-title tie without asking. Qloo `popularity` is a 0–1
+ * percentile, so 0.07 means the top match outranks the other by 7% of the catalogue.
+ * Live /search on 10-11: Minecraft game 0.966 vs a 2020 TV entry with no popularity, Stranger
+ * Things 2016 0.9999 vs 2010 0.573, Breaking Bad show 0.9999 vs a band 0.896 (lead 0.104) all clear it;
+ * The Office US 0.998 vs UK 0.975 (0.023) and Avatar 2005 0.996 vs 2024 0.964 (0.033) do not,
+ * and those are real either/or choices, so the person is still asked.
+ */
+export const POPULARITY_LEAD = 0.07;
+
+/** The clear favourite among same-title results, or undefined when it is a real either/or. */
+export function clearLeader(sameTitle: QlooEntity[]): QlooEntity | undefined {
+  const [top, next] = [...sameTitle].sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0));
+  if (!next) return top;
+  return (top.popularity ?? 0) - (next.popularity ?? 0) >= POPULARITY_LEAD ? top : undefined;
+}
+
+/**
+ * /search each favorite. A pinned choice wins; among results that share the exact title the clear
+ * popularity leader is taken; only a close call becomes a question (options most popular first).
+ */
 export async function resolveFavorites(
   ctx: PlanContext,
 ): Promise<{ seeds: Seed[]; questions: AmbiguityQuestion[]; missing: string[] }> {
@@ -104,10 +124,15 @@ export async function resolveFavorites(
       continue;
     }
     const exact = list.filter((e) => norm(e.name) === norm(fav));
+    const leader = exact.length >= 2 ? clearLeader(exact) : undefined;
+    if (leader) {
+      seeds.push(toSeed(fav, leader));
+      continue;
+    }
     if (exact.length >= 2) {
       questions.push({
         favorite: fav,
-        options: exact.map((e) => ({
+        options: [...exact].sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0)).map((e) => ({
           entityId: e.entity_id,
           name: e.name,
           subtype: e.subtype,

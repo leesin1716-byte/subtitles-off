@@ -9,6 +9,13 @@ export interface Persona {
   input: PlanInput;
 }
 
+/**
+ * Example favorites that share a title with other Qloo entities are pinned to the intended entity
+ * (ids from live /search, 10-11), so the examples never stop on "which one?" if popularity drifts.
+ * A pin only applies when /search still returns that id; otherwise the normal rules run.
+ * Sam's "The Office" (US 2005 vs UK 2001) is left unpinned on purpose: it is the example that
+ * shows the clarifying question.
+ */
 export const PERSONAS: Persona[] = [
   {
     id: "mina",
@@ -20,6 +27,10 @@ export const PERSONAS: Persona[] = [
       favorites: ["Minecraft", "Olivia Rodrigo", "Stranger Things"],
       age: 15,
       family: true,
+      choices: {
+        Minecraft: "CDBDE254-71F0-4640-8D04-5373BEAE5278", // 2011 game (not the 2020 TV entry)
+        "Stranger Things": "07F1170E-BB69-4982-82C6-255F477EBBAD", // 2016 series (not the 2010 film)
+      },
     },
   },
   {
@@ -31,6 +42,7 @@ export const PERSONAS: Persona[] = [
       level: "intermediate",
       favorites: ["The Office", "Arctic Monkeys", "Breaking Bad"],
       age: 34,
+      choices: { "Breaking Bad": "D03D0913-A7B9-4C46-BFEB-958C1B3FA387" }, // 2008 series (not the band)
     },
   },
   {
@@ -42,6 +54,10 @@ export const PERSONAS: Persona[] = [
       level: "beginner",
       favorites: ["The Legend of Zelda: Breath of the Wild", "Phoebe Bridgers", "Avatar: The Last Airbender"],
       age: 22,
+      choices: {
+        "The Legend of Zelda: Breath of the Wild": "7E606158-8878-49D6-82AB-4C83A83F9974", // the game (not the guide book)
+        "Avatar: The Last Airbender": "088692C7-5BF8-4663-BC58-60D03A1A2A5A", // 2005 animated series (not 2024 or the game)
+      },
     },
   },
 ];

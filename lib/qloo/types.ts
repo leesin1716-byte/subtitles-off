@@ -32,6 +32,8 @@ export interface QlooEntity {
     [key: string]: unknown;
   };
   popularity?: number;
+  /** /search names the entity type here (e.g. ["urn:entity:videogame"]); Insights uses `subtype`. */
+  types?: string[];
   tags?: QlooTagRef[];
   disambiguation?: string;
   /** Present on Insights results. Shapes of explainability are parsed defensively (see explain.ts). */

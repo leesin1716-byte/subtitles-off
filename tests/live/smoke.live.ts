@@ -1,7 +1,8 @@
 // 키가 온 날 바로 돌리는 실 API 점검: 문서에 예시가 없는 응답 모양 다섯 가지와 실제 계획 1건을 통과/실패로 찍는다
 import { beforeAll, describe, expect, it } from "vitest";
 import { runPlan } from "@/lib/plan/runner";
-import { genreTagId, isMusicTag } from "@/lib/plan/tools";
+import { createContext, genreTagId, isMusicTag, resolveFavorites } from "@/lib/plan/tools";
+import { BudgetedClient } from "@/lib/qloo/budget";
 import { PERSONAS } from "@/lib/plan/personas";
 import { DEFAULT_BASE_URL, HttpQlooClient } from "@/lib/qloo/http";
 import { toQueryString } from "@/lib/qloo/params";
@@ -116,6 +117,7 @@ describe.skipIf(!key)("live Qloo smoke checks", () => {
     const plan = (events.find((e) => e.type === "plan") as { plan: Plan } | undefined)?.plan;
     show("plan: summary", {
       error: events.find((e) => e.type === "error"),
+      question: events.find((e) => e.type === "needs_input"),
       calls: plan?.calls.length,
       applied: plan?.applied,
       tasteTags: plan?.tasteTags,
@@ -125,6 +127,21 @@ describe.skipIf(!key)("live Qloo smoke checks", () => {
     const items = plan!.weeks.flatMap((w) => w.items);
     expect(items.some((i) => i.domain === "artist")).toBe(true);
     expect(items.some((i) => i.because)).toBe(true);
+  });
+  it("9. same-title favorites settle by popularity without pins; only a close call asks", async () => {
+    const client = new HttpQlooClient({ apiKey: key!, baseUrl: base });
+    const resolveUnpinned = (i: number) =>
+      resolveFavorites(createContext({ ...PERSONAS[i].input, choices: undefined }, new BudgetedClient(client), () => {}));
+    const [mina, sam] = await Promise.all([resolveUnpinned(0), resolveUnpinned(1)]);
+    show("resolve without pins", {
+      mina: mina.seeds.map((s) => `${s.name} ${s.subtype} ${s.year ?? ""} ${s.entityId}`),
+      sam: sam.seeds.map((s) => `${s.name} ${s.subtype} ${s.year ?? ""} ${s.entityId}`),
+      samQuestions: sam.questions,
+    });
+    expect(mina.questions).toEqual([]);
+    // The popularity rule lands on the same entities the example pins name.
+    expect(mina.seeds.map((s) => s.entityId)).toEqual(expect.arrayContaining(Object.values(PERSONAS[0].input.choices ?? {})));
+    expect(sam.questions.map((q) => q.favorite)).toEqual(["The Office"]);
   });
 });
 

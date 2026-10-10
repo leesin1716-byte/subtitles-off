@@ -40,7 +40,7 @@ export function planCacheKey(input: PlanInput, scope: string): string {
 /** An example person's input, including the follow-up run after they answer "which one do you mean?". */
 export function isPersonaInput(input: PlanInput): boolean {
   const k = planCacheKey({ ...input, choices: undefined }, "");
-  return PERSONAS.some((p) => planCacheKey(p.input, "") === k);
+  return PERSONAS.some((p) => planCacheKey({ ...p.input, choices: undefined }, "") === k);
 }
 
 /** Finished plans and ambiguity questions are kept; anything that ended in an error is not. */
