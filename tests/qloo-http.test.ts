@@ -1,6 +1,6 @@
 // 실제 API 클라이언트의 URL·헤더·재시도·오류 분류·캐시를 가짜 fetch로 검증하는 테스트
 import { describe, expect, it, vi } from "vitest";
-import { HttpQlooClient } from "@/lib/qloo/http";
+import { HttpQlooClient, RateGate } from "@/lib/qloo/http";
 import { QlooError } from "@/lib/qloo/errors";
 
 const json = (status: number, body: unknown) =>
@@ -51,6 +51,45 @@ describe("HttpQlooClient", () => {
     expect(err.kind).toBe(kind);
     expect(err.message).toContain("nope");
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits out a per-second 429 (as the host sends it) and retries", async () => {
+    const limited = () =>
+      new Response(JSON.stringify({ error_msg: "Rate limit exceeded" }), {
+        status: 429,
+        headers: { "x-second-ratelimit-limit": "5", "x-second-ratelimit-remaining": "0", "x-second-ratelimit-reset": "0.3" },
+      });
+    const fetchImpl = vi.fn().mockImplementationOnce(async () => limited()).mockImplementationOnce(async () => json(200, { success: true, results: [] }));
+    const t = Date.now();
+    await client(fetchImpl as unknown as typeof fetch).search("x", []);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(Date.now() - t).toBeGreaterThanOrEqual(300);
+
+    const always = vi.fn(async () => limited());
+    const err = await client(always as unknown as typeof fetch).search("y", []).catch((e) => e);
+    expect(err).toMatchObject({ kind: "rate_limited", message: "Qloo 429: Rate limit exceeded" });
+    expect(always).toHaveBeenCalledTimes(3); // first try + 2 retries
+  });
+
+  it("does not retry a 429 once the monthly quota is spent", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(JSON.stringify({ error_msg: "Rate limit exceeded" }), {
+        status: 429,
+        headers: { "x-second-ratelimit-reset": "0.3", "x-month-ratelimit-remaining": "0" },
+      }),
+    );
+    const err = await client(fetchImpl as unknown as typeof fetch).search("z", []).catch((e) => e);
+    expect(err.kind).toBe("rate_limited");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts at most four requests in any second, in order", async () => {
+    let now = 0;
+    const gate = new RateGate(4, () => now, async (ms) => void (now += ms));
+    const started: number[] = [];
+    await Promise.all(Array.from({ length: 9 }, () => gate.wait().then(() => started.push(now))));
+    expect(started.slice(0, 4).every((t) => t === 0)).toBe(true);
+    for (let i = 4; i < started.length; i++) expect(started[i] - started[i - 4]).toBeGreaterThanOrEqual(1000);
   });
 
   it("reads the nested error body the hackathon host actually returns", async () => {

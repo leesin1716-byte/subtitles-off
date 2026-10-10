@@ -17,6 +17,8 @@ export class QlooError extends Error {
     public readonly kind: QlooErrorKind,
     message: string,
     public readonly status?: number,
+    /** 429 only: how long the host says to wait (x-second-ratelimit-reset). Absent when the monthly quota is used up. */
+    public readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = "QlooError";

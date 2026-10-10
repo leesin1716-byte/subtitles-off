@@ -4,7 +4,7 @@ import { runPlan } from "@/lib/plan/runner";
 import { createContext, genreTagId, isMusicTag, resolveFavorites } from "@/lib/plan/tools";
 import { BudgetedClient } from "@/lib/qloo/budget";
 import { PERSONAS } from "@/lib/plan/personas";
-import { DEFAULT_BASE_URL, HttpQlooClient } from "@/lib/qloo/http";
+import { DEFAULT_BASE_URL, HttpQlooClient, sharedGate } from "@/lib/qloo/http";
 import { toQueryString } from "@/lib/qloo/params";
 import { extractContributions, parseTags } from "@/lib/qloo/parse";
 import type { Plan, PlanEvent } from "@/lib/plan/types";
@@ -20,6 +20,7 @@ const base = (process.env.QLOO_BASE_URL ?? DEFAULT_BASE_URL).replace(/\/+$/, "")
 
 /** Raw GET, so the log shows the exact response shape (never the key). */
 async function raw(path: string, params: QueryParams): Promise<Record<string, unknown>> {
+  await sharedGate.wait(); // same 4-per-second pacing as the app's client (the host allows 5)
   const res = await fetch(`${base}${path}?${toQueryString(params)}`, { headers: { "X-Api-Key": key!, accept: "application/json" } });
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) throw new Error(`${path} → ${res.status} ${JSON.stringify(body).slice(0, 300)}`);
