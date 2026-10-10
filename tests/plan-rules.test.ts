@@ -113,3 +113,20 @@ describe("RateLimiter", () => {
     expect(rl.check("ip").allowed).toBe(true);
   });
 });
+
+describe("selectByRules", () => {
+  it("keeps films in the plan even when every TV show has a higher affinity (live Mina, 10-11)", async () => {
+    const { createContext } = await import("@/lib/plan/tools");
+    const { selectByRules } = await import("@/lib/plan/compose");
+    const { BudgetedClient } = await import("@/lib/qloo/budget");
+    const { MockQlooClient } = await import("@/lib/qloo/mock");
+    const ctx = createContext({ language: "ko", level: "beginner", favorites: ["a", "b"] }, new BudgetedClient(new MockQlooClient()), () => {});
+    ctx.byDomain.tv_show = Array.from({ length: 10 }, (_, i) => c(`tv${i}`, "tv_show", 2, 0.99 - i * 0.001));
+    ctx.byDomain.movie = Array.from({ length: 10 }, (_, i) => c(`film${i}`, "movie", 2, 0.5 - i * 0.01));
+    ctx.byDomain.movie[9].tier = 1;
+    const ids = selectByRules(ctx).map((p) => p.entityId);
+    expect(ids.filter((id) => id.startsWith("film")).length).toBeGreaterThanOrEqual(3);
+    expect(ids.filter((id) => id.startsWith("tv")).length).toBeGreaterThanOrEqual(3);
+    expect(ids).toContain("film9"); // the one easy title still gets in for a beginner
+  });
+});

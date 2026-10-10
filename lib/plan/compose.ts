@@ -54,11 +54,16 @@ export function validatePicks(ctx: PlanContext, picks: Pick[]): { ok: boolean; e
   return { ok: errors.length === 0, errors };
 }
 
-/** Rule-based shortlist: best Qloo affinity first, keeping one easy title for beginners. */
+/** Rule-based shortlist: TV and film both represented, then best Qloo affinity, keeping one easy title for beginners. */
 export function selectByRules(ctx: PlanContext): Pick[] {
   const byAffinity = (a: Candidate, b: Candidate) => (b.affinity ?? 0) - (a.affinity ?? 0);
   const screen = [...ctx.byDomain.tv_show, ...ctx.byDomain.movie].sort(byAffinity);
-  let shortlist = screen.slice(0, 8);
+  // Affinity does not compare across types: on live data (10-11, Mina) every K-drama outscored every
+  // film and the plan had no films. So TV and film each get up to 3 slots first; the rest go by affinity.
+  const tv = [...ctx.byDomain.tv_show].sort(byAffinity);
+  const film = [...ctx.byDomain.movie].sort(byAffinity);
+  const floor = [...tv.slice(0, 3), ...film.slice(0, 3)];
+  let shortlist = [...floor, ...[...tv.slice(3), ...film.slice(3)].sort(byAffinity)].slice(0, 8);
   if (ctx.input.level === "beginner" && !shortlist.some((c) => c.tier === 1)) {
     const easy = screen.find((c) => c.tier === 1);
     if (easy) shortlist = [...shortlist.slice(0, 7), easy];
