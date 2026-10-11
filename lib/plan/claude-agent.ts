@@ -18,7 +18,7 @@ export interface ClaudeMessagesApi {
   create(body: MessageCreateParamsNonStreaming, options?: { signal?: AbortSignal; maxRetries?: number }): PromiseLike<BetaMessage>;
 }
 
-/** Token usage of one Claude request (the shape `_system/api_credit/import_usage.py` reads). */
+/** Token usage of one Claude request (one JSON line per request in `CLAUDE_USAGE_LOG`). */
 export interface ClaudeUsage {
   model: string;
   usage: { input_tokens: number; output_tokens: number; cache_creation_input_tokens: number; cache_read_input_tokens: number };
