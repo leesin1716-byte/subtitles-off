@@ -18,6 +18,8 @@ export const compareInputSchema = z.object({
     .array(z.object({ entityId: idSchema, name: z.string().max(160), domain: z.enum(["tv_show", "movie"]) }))
     .min(1)
     .max(10),
+  /** Ratings the plan allowed for the learner's age; absent when the learner has no age limit. */
+  ratings: z.array(z.string().regex(/^[A-Za-z0-9-]{1,10}$/)).max(12).optional(),
 });
 export type CompareInput = z.infer<typeof compareInputSchema>;
 
@@ -43,6 +45,10 @@ export interface ScoredItem {
   popularity?: number;
   inLanguage?: boolean;
   because?: string;
+  /** Qloo's content_rating, as returned by the scoring call. */
+  rating?: string;
+  /** Within the learner's allowed ratings; undefined when there is no age limit or the rating is unknown. */
+  ratingOk?: boolean;
   found: boolean;
 }
 
@@ -55,6 +61,8 @@ export interface ListStats {
   languageMatch?: number;
   /** How many of the favorites Qloo's explainability credits for at least one item. */
   favoritesCovered: number;
+  /** Items whose rating is within the learner's limit, out of those with a known rating. Only when there is a limit. */
+  ageRating?: { ok: number; known: number; unknown: number };
 }
 
 export interface CompareResult {
@@ -65,12 +73,28 @@ export interface CompareResult {
   groundedStats: ListStats;
   seedCount: number;
   calls: number;
+  /** The allowed ratings the lists were judged against (echo of the input). */
+  ratings?: string[];
 }
 
 const mean = (xs: (number | undefined)[]) => {
   const v = xs.filter((x): x is number => typeof x === "number");
   return v.length ? Number((v.reduce((a, b) => a + b, 0) / v.length).toFixed(3)) : undefined;
 };
+
+/** The US film and TV scales Qloo uses (seen live: TV-MA, TV-14, TV-Y, PG). Anything else is not judged. */
+const KNOWN_RATINGS = new Set(["G", "PG", "PG-13", "R", "NC-17", "TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA"]);
+
+/**
+ * Whether a title's rating is within the allowed list. Undefined when it cannot be told: no rating,
+ * "Not Rated", or a scale we do not know. We never guess a rating.
+ */
+export function ratingFits(rating: string | undefined, allowed: string[]): boolean | undefined {
+  if (!rating) return undefined;
+  const r = rating.trim().toUpperCase().replace(/^TV-Y7-FV$/, "TV-Y7");
+  if (!KNOWN_RATINGS.has(r)) return undefined;
+  return allowed.some((a) => a.toUpperCase() === r);
+}
 
 const norm = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, " ").trim();
 
@@ -154,6 +178,9 @@ export async function runCompare(
     const e = scored.get(id) ?? fallback;
     const top = e ? extractContributions(e)[0] : undefined;
     const rc = e ? releaseCountries(e) : [];
+    // Both lists take their rating from the same Insights scoring call, never from the search hit.
+    const rating = scored.get(id)?.properties?.content_rating;
+    const ratingOk = input.ratings ? ratingFits(rating, input.ratings) : undefined;
     return {
       name,
       ...(asked && norm(asked) !== norm(name) ? { asked } : {}),
@@ -163,6 +190,8 @@ export async function runCompare(
       popularity: e?.popularity,
       inLanguage: rc.length ? rc.some((c) => countries.includes(c)) : undefined,
       because: top ? seedName.get(top.entityId) : undefined,
+      ...(rating ? { rating } : {}),
+      ...(ratingOk !== undefined ? { ratingOk } : {}),
       found: true,
     };
   };
@@ -175,19 +204,24 @@ export async function runCompare(
     baselineSource,
     baseline,
     grounded,
-    baselineStats: stats(baseline),
-    groundedStats: stats(grounded),
+    baselineStats: stats(baseline, Boolean(input.ratings)),
+    groundedStats: stats(grounded, Boolean(input.ratings)),
     seedCount: input.seeds.length,
     calls: client.calls.length,
+    ...(input.ratings ? { ratings: input.ratings } : {}),
   };
 }
 
-function stats(items: ScoredItem[]): ListStats {
+function stats(items: ScoredItem[], ageLimited: boolean): ListStats {
   const known = items.filter((i) => i.inLanguage !== undefined);
+  const rated = items.filter((i) => i.ratingOk !== undefined);
   return {
     affinity: mean(items.map((i) => i.affinity)),
     popularity: mean(items.map((i) => i.popularity)),
     languageMatch: known.length ? Number((known.filter((i) => i.inLanguage).length / known.length).toFixed(3)) : undefined,
     favoritesCovered: new Set(items.map((i) => i.because).filter(Boolean)).size,
+    ...(ageLimited
+      ? { ageRating: { ok: rated.filter((i) => i.ratingOk).length, known: rated.length, unknown: items.length - rated.length } }
+      : {}),
   };
 }

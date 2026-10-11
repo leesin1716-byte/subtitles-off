@@ -213,6 +213,7 @@ function ComparePanel({ plan }: { plan: Plan }) {
         language: plan.language,
         seeds: plan.seeds.map((s) => ({ entityId: s.entityId, name: s.name })),
         planItems: screen.map((i) => ({ entityId: i.entityId, name: i.name, domain: i.domain })),
+        ratings: plan.ratings,
       }),
     }).catch(() => null);
     const body = res ? await res.json().catch(() => null) : null;
@@ -252,6 +253,13 @@ function ComparePanel({ plan }: { plan: Plan }) {
             <tbody className="tabular-nums">
               <StatRow label="From a country that speaks the language" a={pct(result.baselineStats.languageMatch)} b={pct(result.groundedStats.languageMatch)} />
               <StatRow label="Favorites it draws on (Qloo explainability)" a={`${result.baselineStats.favoritesCovered} of ${result.seedCount}`} b={`${result.groundedStats.favoritesCovered} of ${result.seedCount}`} />
+              {result.ratings && (
+                <StatRow
+                  label="Rated for the learner's age†"
+                  a={ageCount(result.baselineStats.ageRating)}
+                  b={ageCount(result.groundedStats.ageRating)}
+                />
+              )}
               <StatRow label="Average popularity percentile" a={pct(result.baselineStats.popularity)} b={pct(result.groundedStats.popularity)} />
               <StatRow label="Average taste affinity*" a={num(result.baselineStats.affinity)} b={num(result.groundedStats.affinity)} />
             </tbody>
@@ -261,14 +269,22 @@ function ComparePanel({ plan }: { plan: Plan }) {
               title={result.baselineSource === "llm" ? "Generic AI suggestions" : "Typical generic picks"}
               subtitle={result.baselineSource === "llm" ? "Asked an LLM without Qloo, then looked each title up in Qloo" : "Sample mode: a fixed list of the usual global hits"}
               items={result.baseline}
+              ageLimited={Boolean(result.ratings)}
             />
-            <ScoreList title="This plan (Qloo-grounded)" subtitle="Picked from Qloo taste matches" items={result.grounded} strong />
+            <ScoreList title="This plan (Qloo-grounded)" subtitle="Picked from Qloo taste matches" items={result.grounded} ageLimited={Boolean(result.ratings)} strong />
           </div>
           <p className="text-xs text-ink-soft">
             *The plan was picked by Qloo affinity within its filters (a country of the language, ratings for the learner&apos;s age), so
             this row tends to favour it, but a list that ignores those filters can still score higher. The other rows do not depend on it. Popularity is
             Qloo&apos;s percentile, where a high number means a global hit. {result.calls} Qloo calls.
           </p>
+          {result.ratings && (
+            <p className="text-xs text-ink-soft">
+              &dagger;Each title&apos;s rating is Qloo&apos;s content rating, read from the same scoring call for both lists. The plan only allowed{" "}
+              {result.ratings.join(", ")}. A title Qloo has no rating for (or marks Not Rated) is counted as unknown, not as a pass or a fail.
+              The generic request did not mention the learner&apos;s age.
+            </p>
+          )}
         </div>
       )}
     </section>
@@ -287,8 +303,10 @@ function StatRow({ label, a, b }: { label: string; a: string; b: string }) {
 
 const pct = (x: number | undefined) => (x === undefined ? "—" : `${Math.round(x * 100)}%`);
 const num = (x: number | undefined) => (x === undefined ? "—" : x.toFixed(2));
+const ageCount = (x: { ok: number; known: number; unknown: number } | undefined) =>
+  !x ? "—" : `${x.known ? `${x.ok} of ${x.known}` : "—"}${x.unknown ? ` (${x.unknown} unknown)` : ""}`;
 
-function ScoreList({ title, subtitle, items, strong }: { title: string; subtitle: string; items: ScoredItem[]; strong?: boolean }) {
+function ScoreList({ title, subtitle, items, ageLimited, strong }: { title: string; subtitle: string; items: ScoredItem[]; ageLimited: boolean; strong?: boolean }) {
   return (
     <div className={`rounded-md border p-4 ${strong ? "border-[var(--ink)]" : "border-[var(--line)]"}`}>
       <p className="font-semibold">{title}</p>
@@ -304,6 +322,10 @@ function ScoreList({ title, subtitle, items, strong }: { title: string; subtitle
                 </span>
                 {i.asked && <span className="block text-xs text-ink-soft">asked for “{i.asked}”</span>}
                 {i.found && i.inLanguage === false && <span className="block text-xs text-ink-soft">not from a target-language country</span>}
+                {ageLimited && i.found && i.ratingOk === false && <span className="block text-xs text-ink-soft">rated {i.rating}, above the age limit</span>}
+                {ageLimited && i.found && i.ratingOk === undefined && (
+                  <span className="block text-xs text-ink-soft">rating unknown ({i.rating ?? "none in Qloo"})</span>
+                )}
               </span>
               <span className="shrink-0 tabular-nums text-ink-soft">{i.affinity !== undefined ? i.affinity.toFixed(2) : i.found ? "n/a" : "not in Qloo"}</span>
             </div>

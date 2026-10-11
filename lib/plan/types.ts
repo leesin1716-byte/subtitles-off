@@ -79,6 +79,8 @@ export interface Plan {
   mode: "live" | "mock";
   calls: CallRecord[];
   applied: string[]; // human-readable constraints, e.g. "Release country: South Korea"
+  /** Content ratings allowed for the learner's age (the compare panel judges both lists against them); absent = no limit. */
+  ratings?: string[];
   /** Genre tags Qloo's taste analysis links to the favorites (Insights, filter.type=urn:tag). */
   tasteTags: string[];
   /** Whether an LLM was configured for this deployment (the compare panel needs one in live mode). */

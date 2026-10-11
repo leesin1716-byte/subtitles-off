@@ -34,7 +34,8 @@ export function planCacheKey(input: PlanInput, scope: string): string {
     c: input.choices ? Object.entries(input.choices).map(([k, v]) => `${norm(k)}=${v}`).sort() : undefined,
     s: input.excludeIds?.length ? [...input.excludeIds].sort() : undefined,
   };
-  return `plan:v1:${scope}:${JSON.stringify(key)}`;
+  // v2: plans carry `ratings` for the compare panel's age-rating row; v1 entries lack it.
+  return `plan:v2:${scope}:${JSON.stringify(key)}`;
 }
 
 /** An example person's input, including the follow-up run after they answer "which one do you mean?". */

@@ -27,7 +27,24 @@ test("S2: an ambiguous favorite is confirmed, then the plan is compared with a g
   await expect(page.getByText("From a country that speaks the language")).toBeVisible();
   await expect(page.getByText("Favorites it draws on (Qloo explainability)")).toBeVisible();
   await expect(page.getByText(/so this row tends to favour it/)).toBeVisible();
+  // Sam (34) has no age limit, so there is no rating row
+  await expect(page.getByText("Rated for the learner's age†")).toHaveCount(0);
   await page.screenshot({ path: "test-results/s2-compare.png", fullPage: true });
+});
+
+test("S2b: a 15-year-old's comparison checks both lists against her age ratings", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Mina, 15/ }).click();
+  await expect(page.getByRole("heading", { name: /Four weeks of Korean/ })).toBeVisible();
+  await page.getByRole("button", { name: "Compare with a generic AI list" }).click();
+  const row = page.getByRole("row", { name: /Rated for the learner's age/ });
+  await expect(row).toBeVisible();
+  // sample mode's typical picks are Squid Game (TV-MA), Parasite (R) and Kingdom (TV-MA)
+  await expect(row.getByRole("cell").nth(1)).toHaveText("0 of 3");
+  await expect(row.getByRole("cell").nth(2)).toHaveText(/^(\d) of \1$/);
+  await expect(page.getByText("rated TV-MA, above the age limit").first()).toBeVisible();
+  await expect(page.getByText(/read from the same scoring call for both lists/)).toBeVisible();
+  await page.screenshot({ path: "test-results/s2b-compare-ratings.png", fullPage: true });
 });
 
 test("S3: a shared link reopens the plan and a refinement removes violent genres", async ({ page }) => {

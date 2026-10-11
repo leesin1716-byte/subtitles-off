@@ -97,6 +97,7 @@ export function assemblePlan(ctx: PlanContext, picks: Pick[], planner: Plan["pla
     mode: ctx.client.mode,
     calls: ctx.client.calls,
     applied: ctx.applied,
+    ...(ctx.ratings ? { ratings: ctx.ratings } : {}),
     tasteTags: ctx.tasteTags,
     llmConfigured: false,
   };

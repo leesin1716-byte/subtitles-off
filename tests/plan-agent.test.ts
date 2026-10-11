@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { MockLanguageModelV4 } from "ai/test";
 import { runPlan } from "@/lib/plan/runner";
-import { runCompare } from "@/lib/plan/compare";
+import { ratingFits, runCompare } from "@/lib/plan/compare";
 import { validatePicks } from "@/lib/plan/compose";
 import { createContext } from "@/lib/plan/tools";
 import { MockQlooClient } from "@/lib/qloo/mock";
@@ -137,5 +137,105 @@ describe("compare panel", () => {
     const r = await runCompare(input, { client: new MockQlooClient(), model });
     expect(r.baselineSource).toBe("llm");
     expect(r.baseline[1]).toEqual({ name: "Totally Unknown Show", found: false });
+  });
+
+  describe("age rating row", () => {
+    const TEENS = ["G", "PG", "TV-Y", "TV-Y7", "TV-G", "TV-PG", "PG-13", "TV-14"];
+    const mina = {
+      language: "ko" as const,
+      seeds: [
+        { entityId: "mock-stranger-things", name: "Stranger Things" },
+        { entityId: "mock-minecraft", name: "Minecraft" },
+      ],
+      planItems: [
+        { entityId: "mock-reply-1988", name: "Reply 1988", domain: "tv_show" as const },
+        { entityId: "mock-running-man", name: "Running Man", domain: "tv_show" as const },
+        { entityId: "mock-little-forest", name: "Little Forest", domain: "movie" as const },
+      ],
+      ratings: TEENS,
+    };
+
+    it("judges both lists against the learner's allowed ratings", async () => {
+      const r = await runCompare(mina, { client: new MockQlooClient() });
+      // canned Korean hits: Squid Game TV-MA, Parasite R, Kingdom TV-MA
+      expect(r.baseline.map((b) => [b.name, b.rating, b.ratingOk])).toEqual([
+        ["Squid Game", "TV-MA", false],
+        ["Parasite", "R", false],
+        ["Kingdom", "TV-MA", false],
+      ]);
+      expect(r.baselineStats.ageRating).toEqual({ ok: 0, known: 3, unknown: 0 });
+      expect(r.grounded.map((g) => g.ratingOk)).toEqual([true, true, true]);
+      expect(r.groundedStats.ageRating).toEqual({ ok: 3, known: 3, unknown: 0 });
+      expect(r.ratings).toEqual(TEENS);
+    });
+
+    it("reads ratings from the Insights scoring call for both lists, and counts a missing rating as unknown", async () => {
+      const mock = new MockQlooClient();
+      const client = {
+        mode: mock.mode,
+        tags: mock.tags.bind(mock),
+        // search hits carry no rating, so a rating can only come from the shared scoring call
+        search: async (...a: Parameters<MockQlooClient["search"]>) => {
+          const res = await mock.search(...a);
+          return { ...res, results: res.results.map((e) => ({ ...e, properties: { ...e.properties, content_rating: undefined } })) };
+        },
+        // Qloo has no rating for Reply 1988 (seen live) and gives one in an unknown scheme for Running Man
+        insights: async (p: Parameters<MockQlooClient["insights"]>[0]) => {
+          const res = await mock.insights(p);
+          const patch: Record<string, string | undefined> = { "mock-reply-1988": undefined, "mock-running-man": "Not Rated" };
+          return {
+            ...res,
+            results: {
+              ...res.results,
+              entities: res.results.entities?.map((e) => (e.entity_id in patch ? { ...e, properties: { ...e.properties, content_rating: patch[e.entity_id] } } : e)),
+            },
+          };
+        },
+      };
+      const r = await runCompare(mina, { client });
+      expect(r.baselineStats.ageRating).toEqual({ ok: 0, known: 3, unknown: 0 });
+      expect(r.grounded.map((g) => g.ratingOk)).toEqual([undefined, undefined, true]);
+      expect(r.groundedStats.ageRating).toEqual({ ok: 1, known: 1, unknown: 2 });
+    });
+
+    it("titles not found in Qloo are unknown, not failures", async () => {
+      const model = new MockLanguageModelV4({ doGenerate: [textStep(JSON.stringify({ titles: ["Squid Game", "Totally Unknown Show"] }))] });
+      const r = await runCompare(mina, { client: new MockQlooClient(), model });
+      expect(r.baselineStats.ageRating).toEqual({ ok: 0, known: 1, unknown: 1 });
+    });
+
+    it("has no rating row when the learner has no age limit", async () => {
+      const r = await runCompare(input, { client: new MockQlooClient() });
+      expect(r.ratings).toBeUndefined();
+      expect(r.baselineStats.ageRating).toBeUndefined();
+      expect(r.groundedStats.ageRating).toBeUndefined();
+      expect(r.baseline.every((b) => b.ratingOk === undefined)).toBe(true);
+    });
+
+    it("ratingFits only answers for the US film and TV scales it knows", () => {
+      expect(ratingFits("TV-14", TEENS)).toBe(true);
+      expect(ratingFits("tv-ma", TEENS)).toBe(false);
+      expect(ratingFits("NC-17", TEENS)).toBe(false);
+      expect(ratingFits("TV-Y7-FV", TEENS)).toBe(true);
+      expect(ratingFits("Not Rated", TEENS)).toBeUndefined();
+      expect(ratingFits("NR", TEENS)).toBeUndefined();
+      expect(ratingFits("15", TEENS)).toBeUndefined();
+      expect(ratingFits(undefined, TEENS)).toBeUndefined();
+    });
+  });
+});
+
+describe("plan carries the learner's allowed ratings for the compare panel", () => {
+  const collect = async (input: PlanInput) => {
+    const events: PlanEvent[] = [];
+    await runPlan(input, { client: new MockQlooClient(), emit: (e) => events.push(e) });
+    return { plan: (events.find((e) => e.type === "plan") as { plan: Plan } | undefined)?.plan };
+  };
+  it("Mina (15) has the teen list; an adult has none", async () => {
+    const { plan } = await collect(MINA);
+    expect(plan?.ratings).toContain("TV-14");
+    expect(plan?.ratings).not.toContain("TV-MA");
+    const adult = await collect({ language: "es", level: "intermediate", favorites: ["The Office", "Breaking Bad"], age: 34, choices: { "The Office": "mock-the-office-us" } });
+    expect(adult.plan?.ratings).toBeUndefined();
   });
 });

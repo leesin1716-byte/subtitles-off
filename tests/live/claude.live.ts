@@ -95,22 +95,34 @@ describe.skipIf(!qlooKey || !claudeKey)("live Claude planner", () => {
     }, 120_000);
   }
 
-  it("compare: the same Claude without Qloo gives the baseline list", async () => {
+  it("compare: the same Claude without Qloo gives the baseline list, judged against Mina's age ratings", async () => {
+    // Mina's plan from the rule planner (no Claude cost), then one Claude call for the generic list
+    const events: PlanEvent[] = [];
+    await runPlan(PERSONAS[0].input, { client: new HttpQlooClient({ apiKey: qlooKey!, baseUrl: base }), emit: (e) => events.push(e) });
+    const p = (events.find((e) => e.type === "plan") as { plan: Plan } | undefined)?.plan;
+    expect(p?.ratings).toContain("TV-14");
+    const screen = p!.weeks.flatMap((w) => w.items).filter((i) => i.domain !== "artist").slice(0, 6);
     const r = await runCompare(
       {
-        language: "ko",
-        seeds: [
-          { entityId: "07F1170E-BB69-4982-82C6-255F477EBBAD", name: "Stranger Things" },
-          { entityId: "CDBDE254-71F0-4640-8D04-5373BEAE5278", name: "Minecraft" },
-        ],
-        planItems: [{ entityId: "07F1170E-BB69-4982-82C6-255F477EBBAD", name: "Stranger Things", domain: "tv_show" }],
+        language: p!.language,
+        seeds: p!.seeds.map((s) => ({ entityId: s.entityId, name: s.name })),
+        planItems: screen.map((i) => ({ entityId: i.entityId, name: i.name, domain: i.domain as "tv_show" | "movie" })),
+        ratings: p!.ratings,
       },
       { client: new HttpQlooClient({ apiKey: qlooKey!, baseUrl: base }), claude },
     );
-    console.log(`\n[compare] source=${r.baselineSource} baseline=${r.baseline.map((b) => b.asked ?? b.name).join(" | ")} stats=${JSON.stringify(r.baselineStats)}`);
+    const show = (xs: typeof r.baseline) => xs.map((b) => `${b.name}=${b.rating ?? "?"}${b.ratingOk === undefined ? "" : b.ratingOk ? "+" : "-"}`).join(" | ");
+    console.log(`
+[compare] source=${r.baselineSource}
+  baseline: ${show(r.baseline)}
+  plan: ${show(r.grounded)}
+  baselineStats=${JSON.stringify(r.baselineStats)}
+  groundedStats=${JSON.stringify(r.groundedStats)}`);
     expect(r.baselineSource).toBe("llm");
     expect(r.baseline.length).toBeGreaterThan(0);
-  }, 90_000);
+    expect(r.baselineStats.ageRating).toBeDefined();
+    expect(r.groundedStats.ageRating).toBeDefined();
+  }, 120_000);
 });
 
 describe.runIf(!qlooKey || !claudeKey)("live Claude planner", () => {
