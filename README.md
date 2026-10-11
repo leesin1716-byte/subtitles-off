@@ -98,6 +98,8 @@ npm run smoke:live     # with a real QLOO_API_KEY: checks the response shapes th
 npm run smoke:claude   # with QLOO_API_KEY and ANTHROPIC_API_KEY: Claude plans the three examples on live data and writes the compare baseline (costs API credit)
 ```
 
+The demo video is made by `video/make.ts`: after `npm run build`, run `npm install` and `npm run make` in `video/` with `QLOO_API_KEY` in `.env.local` and `ANTHROPIC_API_KEY` set. It records Mina's example on live Qloo and Claude, voices the narration with Kokoro-82M, replaces Qloo poster images with plain tiles, and writes the mp4, subtitles and stills to `video/out/`.
+
 External APIs are never called in `npm test`. Qloo calls go through the mock client or a fake `fetch`, the gateway LLM is `MockLanguageModelV4` with recorded tool calls, and Claude is a recorded stand-in for `messages.create` (tool loop, request settings, refusal, timeout, billing error and daily cap).
 
 ## Deploying
