@@ -44,6 +44,7 @@ test("S2b: a 15-year-old's comparison checks both lists against her age ratings"
   await expect(row.getByRole("cell").nth(2)).toHaveText(/^(\d) of \1$/);
   await expect(page.getByText("rated TV-MA, above the age limit").first()).toBeVisible();
   await expect(page.getByText(/read from the same scoring call for both lists/)).toBeVisible();
+  await expect(page.getByText(/a fail\. The typical picks are a fixed sample list, not chosen for the learner's age/)).toBeVisible();
   await page.screenshot({ path: "test-results/s2b-compare-ratings.png", fullPage: true });
 });
 

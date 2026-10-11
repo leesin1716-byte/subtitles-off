@@ -201,6 +201,12 @@ describe("compare baseline with Claude", () => {
     expect(claude.usages[0].purpose).toBe("compare");
   });
 
+  it("tells Claude the learner's rating limit, as the planner was told", async () => {
+    const { api, bodies } = recorded([reply([{ type: "text", text: JSON.stringify({ titles: ["Reply 1988"] }) }], "end_turn")]);
+    await runCompare({ ...input, ratings: ["G", "PG", "TV-14"] }, { client: new MockQlooClient(), claude: agentWith(api) });
+    expect(bodies[0].messages[0].content).toMatch(/US content rating is one of: G, PG, TV-14 \(/);
+  });
+
   it("stops asking Claude for baselines past the daily cap", async () => {
     const { api, bodies } = recorded([]);
     const r = await runCompare(input, { client: new MockQlooClient(), claude: agentWith(api, { dailyCap: 0 }) });

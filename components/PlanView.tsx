@@ -275,14 +275,16 @@ function ComparePanel({ plan }: { plan: Plan }) {
           </div>
           <p className="text-xs text-ink-soft">
             *The plan was picked by Qloo affinity within its filters (a country of the language, ratings for the learner&apos;s age), so
-            this row tends to favour it, but a list that ignores those filters can still score higher. The other rows do not depend on it. Popularity is
+            this row tends to favour it, but a generic list can still score higher. The other rows do not depend on it. Popularity is
             Qloo&apos;s percentile, where a high number means a global hit. {result.calls} Qloo calls.
           </p>
           {result.ratings && (
             <p className="text-xs text-ink-soft">
               &dagger;Each title&apos;s rating is Qloo&apos;s content rating, read from the same scoring call for both lists. The plan only allowed{" "}
               {result.ratings.join(", ")}. A title Qloo has no rating for (or marks Not Rated) is counted as unknown, not as a pass or a fail.
-              The generic request did not mention the learner&apos;s age.
+              {result.baselineSource === "llm"
+                ? " The generic question was given the same rating limit."
+                : " The typical picks are a fixed sample list, not chosen for the learner's age."}
             </p>
           )}
         </div>

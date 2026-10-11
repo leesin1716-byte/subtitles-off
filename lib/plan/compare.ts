@@ -98,11 +98,17 @@ export function ratingFits(rating: string | undefined, allowed: string[]): boole
 
 const norm = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, " ").trim();
 
-/** What a generic assistant is asked: the same request, with no taste data behind it. */
+/**
+ * What a generic assistant is asked: the same request, with no taste data behind it. When the
+ * learner has an age limit it gets the same rating list the planner was told, so the rating row
+ * compares like with like.
+ */
 export const genericPrompt = (input: CompareInput) =>
   `Recommend 4 ${LANGUAGES[input.language].label}-language TV shows or films for someone learning ${LANGUAGES[input.language].label} who likes ${input.seeds
     .map((s) => s.name)
-    .join(", ")}. Reply with English titles only.`;
+    .join(", ")}.` +
+  (input.ratings ? ` Only suggest titles whose US content rating is one of: ${input.ratings.join(", ")} (the limit for the learner's age).` : "") +
+  " Reply with English titles only.";
 
 async function askGenericLlm(model: LanguageModel, input: CompareInput, abortSignal?: AbortSignal): Promise<string[]> {
   const { output } = await generateText({

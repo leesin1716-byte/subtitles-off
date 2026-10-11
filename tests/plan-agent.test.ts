@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { MockLanguageModelV4 } from "ai/test";
 import { runPlan } from "@/lib/plan/runner";
-import { ratingFits, runCompare } from "@/lib/plan/compare";
+import { genericPrompt, ratingFits, runCompare } from "@/lib/plan/compare";
 import { validatePicks } from "@/lib/plan/compose";
 import { createContext } from "@/lib/plan/tools";
 import { MockQlooClient } from "@/lib/qloo/mock";
@@ -202,6 +202,13 @@ describe("compare panel", () => {
       const model = new MockLanguageModelV4({ doGenerate: [textStep(JSON.stringify({ titles: ["Squid Game", "Totally Unknown Show"] }))] });
       const r = await runCompare(mina, { client: new MockQlooClient(), model });
       expect(r.baselineStats.ageRating).toEqual({ ok: 0, known: 1, unknown: 1 });
+    });
+
+    it("gives the generic question the same rating limit the plan worked within", () => {
+      const prompt = genericPrompt(mina);
+      expect(prompt).toContain("Stranger Things, Minecraft");
+      expect(prompt).toContain(`US content rating is one of: ${TEENS.join(", ")}`);
+      expect(genericPrompt(input)).not.toMatch(/content rating/);
     });
 
     it("has no rating row when the learner has no age limit", async () => {
