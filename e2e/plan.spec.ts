@@ -26,7 +26,7 @@ test("S2: an ambiguous favorite is confirmed, then the plan is compared with a g
   await expect(page.getByText("This plan (Qloo-grounded)")).toBeVisible();
   await expect(page.getByText("From a country that speaks the language")).toBeVisible();
   await expect(page.getByText("Favorites it draws on (Qloo explainability)")).toBeVisible();
-  await expect(page.getByText(/so it should win on that row/)).toBeVisible();
+  await expect(page.getByText(/so this row tends to favour it/)).toBeVisible();
   await page.screenshot({ path: "test-results/s2-compare.png", fullPage: true });
 });
 

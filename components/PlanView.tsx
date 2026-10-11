@@ -265,7 +265,8 @@ function ComparePanel({ plan }: { plan: Plan }) {
             <ScoreList title="This plan (Qloo-grounded)" subtitle="Picked from Qloo taste matches" items={result.grounded} strong />
           </div>
           <p className="text-xs text-ink-soft">
-            *The plan was chosen by Qloo affinity, so it should win on that row; the other rows do not depend on it. Popularity is
+            *The plan was picked by Qloo affinity within its filters (a country of the language, ratings for the learner&apos;s age), so
+            this row tends to favour it, but a list that ignores those filters can still score higher. The other rows do not depend on it. Popularity is
             Qloo&apos;s percentile, where a high number means a global hit. {result.calls} Qloo calls.
           </p>
         </div>
