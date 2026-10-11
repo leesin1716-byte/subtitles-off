@@ -44,3 +44,7 @@ next-env.d.ts
 # playwright
 /test-results/
 /playwright-report/
+
+# demo video tooling
+/video/node_modules/
+/video/out/

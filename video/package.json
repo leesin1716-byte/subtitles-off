@@ -1,0 +1,13 @@
+{
+  "name": "subtitles-off-video",
+  "private": true,
+  "description": "Demo video tooling for Subtitles Off: records the app on live Qloo and Claude and adds Kokoro-82M voice-over. Not needed to run the app.",
+  "type": "module",
+  "scripts": {
+    "make": "node make.ts"
+  },
+  "dependencies": {
+    "kokoro-js": "1.2.1"
+  },
+  "license": "MIT"
+}
