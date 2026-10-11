@@ -84,7 +84,9 @@ export async function runPlan(input: PlanInput, deps: RunDeps): Promise<void> {
           ? { name: deps.modelName ?? "LLM", label: "LLM agent", run: (signal) => runLlmPlanner(ctx, deps.model!, signal) }
           : undefined;
     if (deps.claude && !claude) {
-      emit({ type: "trace", step: "Claude skipped", detail: claudeOffReason() ? `API refused the key (${claudeOffReason()})` : "daily Claude plan cap reached" });
+      const why = claudeOffReason() ? `API refused the key (${claudeOffReason()})` : "daily Claude plan cap reached";
+      emit({ type: "trace", step: "Claude skipped", detail: why });
+      note = `Rule-based planner (Claude skipped: ${why}).`;
     }
 
     if (agent) {

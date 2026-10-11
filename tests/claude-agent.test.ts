@@ -118,6 +118,29 @@ describe("Claude planner (Anthropic API tool loop)", () => {
     expect(second.plan!.planner).toBe("rules");
   });
 
+  it("switches Claude off when the API answers an empty credit balance with a 400", async () => {
+    // The API has reported a used-up balance as 400 invalid_request_error rather than 402 billing_error.
+    const low = Anthropic.APIError.generate(
+      400,
+      { type: "error", error: { type: "invalid_request_error", message: "Your credit balance is too low to access the Anthropic API." } },
+      undefined,
+      new Headers(),
+    );
+    const { api, bodies } = recorded([low]);
+    const claude = agentWith(api);
+    expect((await run(MINA, { claude })).plan!.planner).toBe("rules");
+    expect(claudeOffReason()).toBe("HTTP 400 (credit balance)");
+    await run(MINA, { claude });
+    expect(bodies).toHaveLength(1);
+  });
+
+  it("keeps Claude on after an ordinary 400", async () => {
+    const bad = Anthropic.APIError.generate(400, { type: "error", error: { type: "invalid_request_error", message: "messages: bad" } }, undefined, new Headers());
+    const { api } = recorded([bad]);
+    await run(MINA, { claude: agentWith(api) });
+    expect(claudeOffReason()).toBeNull();
+  });
+
   it("keeps Claude on after a passing error (rate limit) but plans that request by rules", async () => {
     const rate = Anthropic.APIError.generate(429, { type: "error", error: { type: "rate_limit_error", message: "slow down" } }, undefined, new Headers());
     const { api } = recorded([rate]);
@@ -155,6 +178,7 @@ describe("Claude planner (Anthropic API tool loop)", () => {
     const { events, plan } = await run(MINA, { claude });
     expect(bodies).toHaveLength(0);
     expect(plan!.planner).toBe("rules");
+    expect(plan!.plannerNote).toBe("Rule-based planner (Claude skipped: daily Claude plan cap reached).");
     expect(events.some((e) => e.type === "trace" && e.step === "Claude skipped" && /cap/.test(e.detail ?? ""))).toBe(true);
   });
 });
@@ -175,6 +199,13 @@ describe("compare baseline with Claude", () => {
     expect(bodies[0].output_config?.format?.type).toBe("json_schema");
     expect(bodies[0].tools).toBeUndefined();
     expect(claude.usages[0].purpose).toBe("compare");
+  });
+
+  it("stops asking Claude for baselines past the daily cap", async () => {
+    const { api, bodies } = recorded([]);
+    const r = await runCompare(input, { client: new MockQlooClient(), claude: agentWith(api, { dailyCap: 0 }) });
+    expect(bodies).toHaveLength(0);
+    expect(r.baselineSource).toBe("canned");
   });
 
   it("falls back to the canned list when Claude fails and no gateway model is set", async () => {

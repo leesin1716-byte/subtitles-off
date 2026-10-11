@@ -34,8 +34,8 @@ Guarantees in code:
 - **Only Qloo ids.** The LLM planner can only submit entity ids that Qloo returned in this run. A validator rejects anything else, and after two rejected plans a rule-based planner takes over. With Claude the tool inputs are also schema-checked (`strict: true`).
 - **The "why" comes from Qloo.** The "Because you like…" line uses Qloo's per-result explainability contribution. When the LLM agent adds its own sentence, it is shown separately and labelled "Agent note".
 - **No silent fallback.** On the production deployment, a missing Qloo key is an error page. The app never switches to sample data there.
-- **Bounded cost.** At most 18 Qloo calls per plan and 8 agent steps. If the call budget runs out mid-plan, the agent composes from what it already found. The LLM gets 35 seconds before the rule planner takes over. Claude plans are capped per server instance per day (`CLAUDE_DAILY_PLAN_CAP`, default 60), so a public demo cannot run up the bill.
-- **Quiet fallback.** If Claude declines (`stop_reason: "refusal"`), errors, or runs out of time, that plan is finished by the rule-based planner from the candidates already found, and the plan says so. If the Anthropic API refuses the key for good (401, 402 billing, 403, 404), Claude is switched off for the rest of the process and later plans go straight to the next planner. The demo keeps working after the key or its credit expires.
+- **Bounded cost.** At most 18 Qloo calls per plan and 8 agent steps. If the call budget runs out mid-plan, the agent composes from what it already found. The LLM gets 35 seconds before the rule planner takes over. Claude plans are capped per server instance per day (`CLAUDE_DAILY_PLAN_CAP`, default 60), and Claude compare baselines have their own counter with the same cap, so a public demo cannot run up the bill.
+- **Quiet fallback.** If Claude declines (`stop_reason: "refusal"`), errors, or runs out of time, that plan is finished by the rule-based planner from the candidates already found, and the plan says so. If the Anthropic API refuses the key for good (401, 402 billing, 403, 404, or a 400 about the credit balance), Claude is switched off for the rest of the process and later plans go straight to the next planner. The demo keeps working after the key or its credit expires.
 - **Caching.** Qloo answers are cached for 24 hours per normalised request URL. Finished plans are cached by their inputs (Vercel Runtime Cache), and replaying a cached plan does not count against the per-IP limit (6 a minute, 200 a day). The three example plans are kept for 45 days and refreshed by a daily health check, so the examples keep opening even if Qloo is briefly unavailable.
 
 ## How it works
@@ -80,7 +80,7 @@ Without `QLOO_API_KEY` the app runs on hand-made **sample data** and shows a str
 | `ANTHROPIC_API_KEY` | Enables the Claude planner (tried first). Server-side only. |
 | `CLAUDE_MODEL` | Default `claude-opus-5-5`. |
 | `CLAUDE_EFFORT` | `low` (default), `medium` or `high`. |
-| `CLAUDE_DAILY_PLAN_CAP` | New Claude-planned plans per server instance per UTC day, default 60. Past it, plans use the next planner. |
+| `CLAUDE_DAILY_PLAN_CAP` | New Claude-planned plans per server instance per UTC day, default 60 (compare baselines are counted separately against the same number). Past it, plans use the next planner. |
 | `CLAUDE_USAGE_LOG` | Optional file path: appends the token usage of every Claude request as JSON lines. Usage is always printed to the server log. |
 | `AI_GATEWAY_API_KEY` | Enables the gateway LLM planner (used when Claude is not configured or is switched off). On Vercel, OIDC also works; set the key anyway in production so the agent never depends on it. |
 | `AI_MODEL` | Gateway model id, default `openai/gpt-4.1-mini`. |

@@ -25,7 +25,13 @@ function logUsage(env: Env) {
     console.info(
       `[claude] ${u.purpose} ${u.model} in=${t.input_tokens} out=${t.output_tokens} cache_w=${t.cache_creation_input_tokens} cache_r=${t.cache_read_input_tokens} ${u.ms}ms stop=${u.stopReason}`,
     );
-    if (file) appendFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), ...u })}\n`);
+    if (!file) return;
+    try {
+      appendFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), ...u })}\n`);
+    } catch (e) {
+      // A log that cannot be written (read-only disk) must not fail a plan Claude already answered.
+      console.warn(`[claude] usage log not written: ${(e as Error).message}`);
+    }
   };
 }
 

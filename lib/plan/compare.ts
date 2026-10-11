@@ -6,7 +6,7 @@ import { BudgetedClient } from "../qloo/budget";
 import { extractContributions } from "../qloo/parse";
 import type { QlooClient, QlooEntity } from "../qloo/types";
 import { releaseCountries } from "./tools";
-import { askGenericClaude, claudeOffReason, type ClaudeAgent } from "./claude-agent";
+import { askGenericClaude, takeClaudeSlot, type ClaudeAgent } from "./claude-agent";
 import { LANGUAGES } from "./languages";
 import { LANGUAGE_CODES, type LanguageCode } from "./types";
 
@@ -112,7 +112,7 @@ export async function runCompare(
   let titles: string[] | undefined;
   let baselineSource: CompareResult["baselineSource"] = "canned";
   // Claude first (the same model that planned, now without Qloo), then the gateway model, then the canned list.
-  if (deps.claude && !claudeOffReason()) {
+  if (deps.claude && takeClaudeSlot(deps.claude, new Date(), "compare")) {
     titles = await askGenericClaude(deps.claude, genericPrompt(input), deps.abortSignal).catch(() => undefined);
   }
   if (!titles && deps.model) {

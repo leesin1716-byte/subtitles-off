@@ -85,27 +85,38 @@ const requestBase = (agent: ClaudeAgent) =>
   }) satisfies Partial<MessageCreateParamsNonStreaming>;
 
 /** Process-wide switch: once the API refuses the key for good, every later plan skips Claude at once. */
-const state = { offReason: null as string | null, day: "", plansToday: 0 };
+const state = { offReason: null as string | null, day: "", plansToday: 0, comparesToday: 0 };
 
-/** 401 bad key, 402 billing (the credit ran out), 403 no access, 404 unknown model: retrying will not help. */
+/** The API has also answered a used-up balance with 400 invalid_request_error instead of 402. */
+const isCreditBalance400 = (e: unknown) => e instanceof Anthropic.APIError && e.status === 400 && /credit balance/i.test(e.message);
+
+/**
+ * 401 bad key, 402 billing (the credit ran out), 403 no access, 404 unknown model, or a 400 about the
+ * credit balance: retrying will not help.
+ */
 export function isPermanentClaudeError(e: unknown): boolean {
-  return e instanceof Anthropic.APIError && [401, 402, 403, 404].includes(e.status as number);
+  return e instanceof Anthropic.APIError && ([401, 402, 403, 404].includes(e.status as number) || isCreditBalance400(e));
 }
 
 export function claudeOffReason(): string | null {
   return state.offReason;
 }
 
-/** True when Claude may take this plan; counts the plan against the daily cap. */
-export function takeClaudeSlot(agent: ClaudeAgent, now = new Date()): boolean {
+/**
+ * True when Claude may take this plan (or compare baseline); counts it against the daily cap.
+ * Plans and compare baselines have separate counters with the same cap, so neither is unbounded.
+ */
+export function takeClaudeSlot(agent: ClaudeAgent, now = new Date(), purpose: ClaudeUsage["purpose"] = "plan"): boolean {
   if (state.offReason) return false;
   const day = now.toISOString().slice(0, 10);
   if (state.day !== day) {
     state.day = day;
     state.plansToday = 0;
+    state.comparesToday = 0;
   }
-  if (state.plansToday >= agent.dailyCap) return false;
-  state.plansToday++;
+  const key = purpose === "plan" ? "plansToday" : "comparesToday";
+  if (state[key] >= agent.dailyCap) return false;
+  state[key]++;
   return true;
 }
 
@@ -114,6 +125,7 @@ export function resetClaudeState() {
   state.offReason = null;
   state.day = "";
   state.plansToday = 0;
+  state.comparesToday = 0;
 }
 
 async function send(agent: ClaudeAgent, body: MessageCreateParamsNonStreaming, purpose: ClaudeUsage["purpose"], signal?: AbortSignal) {
@@ -124,7 +136,7 @@ async function send(agent: ClaudeAgent, body: MessageCreateParamsNonStreaming, p
     res = await agent.messages.create(body, { signal, maxRetries: 1 });
   } catch (e) {
     if (isPermanentClaudeError(e)) {
-      state.offReason = `HTTP ${(e as InstanceType<typeof Anthropic.APIError>).status}`;
+      state.offReason = `HTTP ${(e as InstanceType<typeof Anthropic.APIError>).status}${isCreditBalance400(e) ? " (credit balance)" : ""}`;
       console.warn(`[claude] The API refused the key (${state.offReason}); plans use the next planner from now on.`);
     }
     throw e;
