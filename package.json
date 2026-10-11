@@ -10,9 +10,11 @@
     "typecheck": "tsc --noEmit",
     "check:bundle": "node scripts/check-bundle.mjs",
     "test:e2e": "playwright test",
-    "smoke:live": "vitest run --config vitest.live.config.mts"
+    "smoke:live": "vitest run --config vitest.live.config.mts tests/live/smoke.live.ts",
+    "smoke:claude": "vitest run --config vitest.live.config.mts tests/live/claude.live.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
     "@vercel/functions": "^3.9.11",
     "ai": "^7.0.127",
     "next": "16.3.8",

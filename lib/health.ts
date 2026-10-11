@@ -1,6 +1,7 @@
 // 매일 도는 상태 점검: Qloo 실호출 1회, LLM 설정 여부, 예시 계획 3개 예열 결과를 모아 돌려준다
 
-import { llmEnabled, resolveQlooMode } from "./config";
+import { claudeEnabled, llmEnabled, resolveQlooMode } from "./config";
+import { claudeOffReason } from "./plan/claude-agent";
 import { warmPersonaPlans, type PlanDeps, type WarmStatus } from "./plan/handler";
 import type { QlooClient } from "./qloo/types";
 
@@ -10,6 +11,8 @@ export interface HealthReport {
   ok: boolean;
   mode: string;
   llm: "configured" | "off";
+  /** Claude via the Anthropic API: off, configured, or switched off after the API refused the key. */
+  claude: "configured" | "off" | `refused: ${string}`;
   qloo?: { ok: boolean; ms: number; detail: string };
   examples?: Record<string, WarmStatus>;
   checkedAt: string;
@@ -35,6 +38,7 @@ export async function runHealth(opts: {
     ok: mode.ok,
     mode: mode.ok ? mode.mode : `not configured: ${mode.reason}`,
     llm: llmEnabled(opts.env) ? "configured" : "off",
+    claude: !claudeEnabled(opts.env) ? "off" : claudeOffReason() ? `refused: ${claudeOffReason()}` : "configured",
     checkedAt: now().toISOString(),
   };
   if (!opts.deep || !mode.ok) return report;

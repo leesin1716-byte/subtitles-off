@@ -2,6 +2,7 @@
 
 import type { LanguageModel } from "ai";
 import type { QlooClient } from "../qloo/types";
+import type { ClaudeAgent } from "./claude-agent";
 import type { RateLimiter } from "../ratelimit";
 import { clientIp } from "../ratelimit";
 import { PERSONAS } from "./personas";
@@ -12,6 +13,7 @@ import { planInputSchema, type PlanEvent, type PlanInput } from "./types";
 export interface PlanDeps {
   getClient: () => { ok: true; client: QlooClient } | { ok: false; reason: string };
   getModel: () => { model: LanguageModel; name: string } | undefined;
+  getClaude?: () => ClaudeAgent | undefined;
   store: PlanStore;
 }
 
@@ -33,20 +35,28 @@ export function describeInputError(paths: string[]): string {
 /** Runs one plan, forwarding every event, and stores the finished plan in the cache. */
 export async function buildPlan(
   input: PlanInput,
-  deps: { client: QlooClient; llm?: { model: LanguageModel; name: string }; store: PlanStore; emit?: (e: PlanEvent) => void; abortSignal?: AbortSignal },
+  deps: {
+    client: QlooClient;
+    llm?: { model: LanguageModel; name: string };
+    claude?: ClaudeAgent;
+    store: PlanStore;
+    emit?: (e: PlanEvent) => void;
+    abortSignal?: AbortSignal;
+  },
 ): Promise<PlanEvent[]> {
   const events: PlanEvent[] = [];
   await runPlan(input, {
     client: deps.client,
     model: deps.llm?.model,
     modelName: deps.llm?.name,
+    claude: deps.claude,
     abortSignal: deps.abortSignal,
     emit: (e) => {
       events.push(e);
       deps.emit?.(e);
     },
   });
-  await writeCachedPlan(deps.store, planCacheKey(input, scopeOf(deps.client, deps.llm)), input, events);
+  await writeCachedPlan(deps.store, planCacheKey(input, scopeOf(deps.client, deps.llm ?? deps.claude)), input, events);
   return events;
 }
 
@@ -82,7 +92,8 @@ export async function handlePlanRequest(request: Request, deps: PlanHandlerDeps)
   }
 
   const llm = deps.getModel();
-  const cached = await readCachedPlan(deps.store, planCacheKey(parsed.data, scopeOf(qloo.client, llm)));
+  const claude = deps.getClaude?.();
+  const cached = await readCachedPlan(deps.store, planCacheKey(parsed.data, scopeOf(qloo.client, llm ?? claude)));
   // Cache hits cost no Qloo or LLM calls, so they do not count against the per-IP limit.
   if (cached) return ndjson(async (emit) => replayEvents(cached).forEach(emit));
 
@@ -95,7 +106,7 @@ export async function handlePlanRequest(request: Request, deps: PlanHandlerDeps)
   }
 
   return ndjson(async (emit) => {
-    await buildPlan(parsed.data, { client: qloo.client, llm, store: deps.store, emit, abortSignal: request.signal });
+    await buildPlan(parsed.data, { client: qloo.client, llm, claude, store: deps.store, emit, abortSignal: request.signal });
   });
 }
 
@@ -106,14 +117,15 @@ export async function warmPersonaPlans(deps: PlanDeps): Promise<Record<string, W
   const qloo = deps.getClient();
   if (!qloo.ok) return Object.fromEntries(PERSONAS.map((p) => [p.id, `failed: config` as WarmStatus]));
   const llm = deps.getModel();
+  const claude = deps.getClaude?.();
   const entries = await Promise.all(
     PERSONAS.map(async (p): Promise<[string, WarmStatus]> => {
       let input: PlanInput = p.input;
       let status: WarmStatus = "cached";
       // Two rounds: an example with an ambiguous favorite (Sam's "The Office") is warmed with Qloo's first match too.
       for (let round = 0; round < 2; round++) {
-        const hit = await readCachedPlan(deps.store, planCacheKey(input, scopeOf(qloo.client, llm)));
-        const events = hit?.events ?? (await buildPlan(input, { client: qloo.client, llm, store: deps.store }));
+        const hit = await readCachedPlan(deps.store, planCacheKey(input, scopeOf(qloo.client, llm ?? claude)));
+        const events = hit?.events ?? (await buildPlan(input, { client: qloo.client, llm, claude, store: deps.store }));
         if (!hit) status = "built";
         const err = events.find((e) => e.type === "error");
         if (err && err.type === "error") return [p.id, `failed: ${err.code}`];

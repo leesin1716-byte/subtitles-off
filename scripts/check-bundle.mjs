@@ -5,11 +5,12 @@ import { join } from "node:path";
 
 const SENTINEL_QLOO = "sentinel-qloo-key-must-not-ship-7f3a";
 const SENTINEL_GATEWAY = "sentinel-gateway-key-must-not-ship-91c2";
+const SENTINEL_ANTHROPIC = "sentinel-anthropic-key-must-not-ship-4d8e";
 
 if (!process.argv.includes("--no-build")) {
   execSync("npx next build", {
     stdio: "inherit",
-    env: { ...process.env, QLOO_API_KEY: SENTINEL_QLOO, AI_GATEWAY_API_KEY: SENTINEL_GATEWAY },
+    env: { ...process.env, QLOO_API_KEY: SENTINEL_QLOO, AI_GATEWAY_API_KEY: SENTINEL_GATEWAY, ANTHROPIC_API_KEY: SENTINEL_ANTHROPIC },
   });
 }
 
@@ -20,7 +21,7 @@ const walk = (dir) =>
     return statSync(p).isDirectory() ? walk(p) : [p];
   });
 
-const needles = [SENTINEL_QLOO, SENTINEL_GATEWAY, "X-Api-Key", "hackathon.api.qloo.com", "QLOO_API_KEY"];
+const needles = [SENTINEL_QLOO, SENTINEL_GATEWAY, SENTINEL_ANTHROPIC, "X-Api-Key", "hackathon.api.qloo.com", "QLOO_API_KEY", "ANTHROPIC_API_KEY", "api.anthropic.com"];
 const files = walk(root).filter((p) => /\.(js|css|html|json|txt|map)$/.test(p));
 const hits = [];
 for (const f of files) {

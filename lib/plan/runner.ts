@@ -4,7 +4,8 @@ import type { LanguageModel } from "ai";
 import { BudgetedClient, PLAN_CALL_BUDGET } from "../qloo/budget";
 import { QlooError } from "../qloo/errors";
 import type { QlooClient } from "../qloo/types";
-import { runLlmPlanner } from "./agent";
+import { runLlmPlanner, type LlmResult } from "./agent";
+import { claudeOffReason, runClaudePlanner, takeClaudeSlot, type ClaudeAgent } from "./claude-agent";
 import { allCandidates, assemblePlan, selectByRules } from "./compose";
 import {
   createContext,
@@ -24,6 +25,8 @@ export interface RunDeps {
   client: QlooClient;
   model?: LanguageModel;
   modelName?: string;
+  /** Claude through the Anthropic API; tried before the gateway model while its key works. */
+  claude?: ClaudeAgent;
   emit: (e: PlanEvent) => void;
   abortSignal?: AbortSignal;
   /** Qloo calls allowed for this plan (default PLAN_CALL_BUDGET). */
@@ -32,8 +35,11 @@ export interface RunDeps {
   llmTimeoutMs?: number;
 }
 
-/** Leaves room inside the 60 s function limit for the rule planner after an LLM timeout. */
-export const LLM_TIMEOUT_MS = 25_000;
+/**
+ * Leaves room inside the 60 s function limit for the rule planner after an LLM timeout. Claude Opus 5.5
+ * took 2 s to choose the discover calls and 13–16 s to write the final shortlist on live data (10-11).
+ */
+export const LLM_TIMEOUT_MS = 35_000;
 
 const DOMAIN_LABEL = { tv_show: "TV", movie: "film", artist: "music" } as const;
 
@@ -69,26 +75,38 @@ export async function runPlan(input: PlanInput, deps: RunDeps): Promise<void> {
     let planner: "llm" | "rules" = "rules";
     let note = "Rule-based planner (no LLM configured).";
 
-    if (deps.model) {
-      emit({ type: "trace", step: `Agent planning with ${deps.modelName ?? "LLM"}` });
+    // Claude while its key works and today's cap allows, else the gateway model, else rules only.
+    const claude = deps.claude && takeClaudeSlot(deps.claude) ? deps.claude : undefined;
+    const agent: { name: string; label: string; run: (signal: AbortSignal) => Promise<LlmResult> } | undefined =
+      claude
+        ? { name: claude.model, label: `Claude agent (${claude.model})`, run: (signal) => runClaudePlanner(ctx, claude, signal) }
+        : deps.model
+          ? { name: deps.modelName ?? "LLM", label: "LLM agent", run: (signal) => runLlmPlanner(ctx, deps.model!, signal) }
+          : undefined;
+    if (deps.claude && !claude) {
+      emit({ type: "trace", step: "Claude skipped", detail: claudeOffReason() ? `API refused the key (${claudeOffReason()})` : "daily Claude plan cap reached" });
+    }
+
+    if (agent) {
+      emit({ type: "trace", step: `Agent planning with ${agent.name}` });
       const llmSignal = AbortSignal.any(
         [deps.abortSignal, AbortSignal.timeout(deps.llmTimeoutMs ?? LLM_TIMEOUT_MS)].filter((s): s is AbortSignal => !!s),
       );
       try {
-        const r = await runLlmPlanner(ctx, deps.model, llmSignal);
+        const r = await agent.run(llmSignal);
         if (r.picks) {
           picks = r.picks;
           planner = "llm";
-          note = `LLM agent chose ${r.picks.length} items from Qloo results in ${r.steps} steps; code set the weekly order.`;
+          note = `${agent.label} chose ${r.picks.length} items from Qloo results in ${r.steps} steps; code set the weekly order.`;
         } else {
-          note = `LLM agent did not produce a valid plan (${r.failures} rejected); fell back to the rule-based planner.`;
+          note = `${agent.label} did not produce a valid plan (${r.failures} rejected); fell back to the rule-based planner.`;
           emit({ type: "trace", step: "Falling back to rules", detail: note });
         }
       } catch (e) {
         if (e instanceof QlooError) throw e;
         if (deps.abortSignal?.aborted) return; // the browser went away
         const timedOut = llmSignal.aborted;
-        note = timedOut ? "LLM agent ran out of time; used the rule-based planner." : "LLM unavailable; used the rule-based planner.";
+        note = timedOut ? `${agent.label} ran out of time; used the rule-based planner.` : "LLM unavailable; used the rule-based planner.";
         emit({ type: "trace", step: timedOut ? "LLM planner timed out, using rules" : "LLM planner failed, using rules", detail: (e as Error)?.message?.slice(0, 160) });
       }
     }
@@ -106,7 +124,7 @@ export async function runPlan(input: PlanInput, deps: RunDeps): Promise<void> {
       return;
     }
     emit({ type: "trace", step: "Building the four-week ladder", detail: "difficulty from genre rules, easiest first" });
-    emit({ type: "plan", plan: { ...assemblePlan(ctx, picks, planner, note), llmConfigured: Boolean(deps.model) } });
+    emit({ type: "plan", plan: { ...assemblePlan(ctx, picks, planner, note), llmConfigured: Boolean(deps.model || deps.claude) } });
   } catch (e) {
     emit(toErrorEvent(e));
   }

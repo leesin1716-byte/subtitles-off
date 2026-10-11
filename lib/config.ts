@@ -44,3 +44,30 @@ export function llmEnabled(env: Env): boolean {
 export function llmModelId(env: Env): string {
   return env.AI_MODEL?.trim() || "openai/gpt-4.1-mini";
 }
+
+/**
+ * Claude through the Anthropic API takes the agent step when ANTHROPIC_API_KEY is set. When the key
+ * stops working (expired credit, revoked key) the planner switches it off and falls back on its own.
+ */
+export function claudeEnabled(env: Env): boolean {
+  if (env.LLM_MODE?.trim().toLowerCase() === "off") return false;
+  return Boolean(env.ANTHROPIC_API_KEY?.trim());
+}
+
+export function claudeModelId(env: Env): string {
+  return env.CLAUDE_MODEL?.trim() || "claude-opus-5-5";
+}
+
+export type ClaudeEffort = "low" | "medium" | "high";
+
+/** Effort is Claude Opus 5.5's depth and latency control; a planning step fits in "low". */
+export function claudeEffort(env: Env): ClaudeEffort {
+  const e = env.CLAUDE_EFFORT?.trim().toLowerCase();
+  return e === "medium" || e === "high" ? e : "low";
+}
+
+/** New Claude-planned plans per server instance per UTC day; past it, plans use the next planner. */
+export function claudeDailyPlanCap(env: Env): number {
+  const n = Number(env.CLAUDE_DAILY_PLAN_CAP);
+  return Number.isInteger(n) && n >= 0 && env.CLAUDE_DAILY_PLAN_CAP?.trim() ? n : 60;
+}

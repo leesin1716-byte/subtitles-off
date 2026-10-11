@@ -34,11 +34,20 @@ describe("repository guards", () => {
     expect(readFileSync(join(ROOT, "lib/qloo/server.ts"), "utf8")).toContain('import "server-only"');
   });
 
+  it("reads ANTHROPIC_API_KEY only in server-side modules", () => {
+    const readers = files
+      .filter((p) => /\.(ts|tsx)$/.test(p) && !rel(p).startsWith("tests/"))
+      .filter((p) => readFileSync(p, "utf8").includes("ANTHROPIC_API_KEY"))
+      .map(rel);
+    expect(readers.sort()).toEqual(["lib/config.ts", "lib/llm.ts"]);
+    expect(readFileSync(join(ROOT, "lib/llm.ts"), "utf8")).toContain('import "server-only"');
+  });
+
   it("keeps client components away from the Qloo client and secrets", () => {
     const clientFiles = files.filter((p) => /\.tsx?$/.test(p) && readFileSync(p, "utf8").trimStart().startsWith('"use client"'));
     for (const p of clientFiles) {
       const text = readFileSync(p, "utf8");
-      expect(text, rel(p)).not.toMatch(/lib\/qloo\/(server|http)|process\.env\.(QLOO|AI_GATEWAY)/);
+      expect(text, rel(p)).not.toMatch(/lib\/qloo\/(server|http)|lib\/llm|claude-agent|@anthropic-ai|process\.env\.(QLOO|AI_GATEWAY|ANTHROPIC)/);
     }
   });
 });

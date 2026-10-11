@@ -6,6 +6,7 @@ import { BudgetedClient } from "../qloo/budget";
 import { extractContributions } from "../qloo/parse";
 import type { QlooClient, QlooEntity } from "../qloo/types";
 import { releaseCountries } from "./tools";
+import { askGenericClaude, claudeOffReason, type ClaudeAgent } from "./claude-agent";
 import { LANGUAGES } from "./languages";
 import { LANGUAGE_CODES, type LanguageCode } from "./types";
 
@@ -73,13 +74,17 @@ const mean = (xs: (number | undefined)[]) => {
 
 const norm = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, " ").trim();
 
+/** What a generic assistant is asked: the same request, with no taste data behind it. */
+export const genericPrompt = (input: CompareInput) =>
+  `Recommend 4 ${LANGUAGES[input.language].label}-language TV shows or films for someone learning ${LANGUAGES[input.language].label} who likes ${input.seeds
+    .map((s) => s.name)
+    .join(", ")}. Reply with English titles only.`;
+
 async function askGenericLlm(model: LanguageModel, input: CompareInput, abortSignal?: AbortSignal): Promise<string[]> {
   const { output } = await generateText({
     model,
     output: Output.object({ schema: z.object({ titles: z.array(z.string()).max(6) }) }),
-    prompt: `Recommend 4 ${LANGUAGES[input.language].label}-language TV shows or films for someone learning ${LANGUAGES[input.language].label} who likes ${input.seeds
-      .map((s) => s.name)
-      .join(", ")}. Reply with English titles only.`,
+    prompt: genericPrompt(input),
     maxRetries: 1,
     abortSignal,
   });
@@ -99,23 +104,22 @@ export function pickSearchHit(title: string, hits: QlooEntity[], countries: stri
 
 export async function runCompare(
   input: CompareInput,
-  deps: { client: QlooClient; model?: LanguageModel; abortSignal?: AbortSignal },
+  deps: { client: QlooClient; model?: LanguageModel; claude?: ClaudeAgent; abortSignal?: AbortSignal },
 ): Promise<CompareResult> {
   const client = new BudgetedClient(deps.client, 10);
   const profile = LANGUAGES[input.language];
   const countries = [...profile.countries, ...profile.widenCountries];
-  let titles: string[];
+  let titles: string[] | undefined;
   let baselineSource: CompareResult["baselineSource"] = "canned";
-  if (deps.model) {
-    try {
-      titles = await askGenericLlm(deps.model, input, deps.abortSignal);
-      baselineSource = "llm";
-    } catch {
-      titles = CANNED_BASELINE[input.language];
-    }
-  } else {
-    titles = CANNED_BASELINE[input.language];
+  // Claude first (the same model that planned, now without Qloo), then the gateway model, then the canned list.
+  if (deps.claude && !claudeOffReason()) {
+    titles = await askGenericClaude(deps.claude, genericPrompt(input), deps.abortSignal).catch(() => undefined);
   }
+  if (!titles && deps.model) {
+    titles = await askGenericLlm(deps.model, input, deps.abortSignal).catch(() => undefined);
+  }
+  if (titles) baselineSource = "llm";
+  else titles = CANNED_BASELINE[input.language];
 
   // Resolve the generic titles to Qloo entities (three hits each, so the right "Kingdom" can be chosen).
   type Resolved = { title: string; entity?: QlooEntity };
