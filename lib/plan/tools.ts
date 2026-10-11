@@ -84,7 +84,7 @@ function toSeed(query: string, e: QlooEntity): Seed {
     subtype: e.subtype,
     year: e.properties?.release_year,
     disambiguation: e.disambiguation,
-    tagIds: (e.tags ?? []).map((t) => t.id),
+    tagIds: usableTags(e).map((t) => t.id),
   };
 }
 
@@ -257,9 +257,19 @@ const targetCountries = (ctx: PlanContext, stage: number) =>
 
 /** First listed release country (Insights gives an array; /search has shown a plain string). */
 export function firstCountry(e: QlooEntity): string | undefined {
+  return releaseCountries(e)[0];
+}
+
+/** Release countries as a list: Insights sends an array, live /search a single string (10-11). */
+export function releaseCountries(e: QlooEntity): string[] {
   const rc: unknown = e.properties?.release_country;
-  if (Array.isArray(rc)) return typeof rc[0] === "string" ? rc[0] : undefined;
-  return typeof rc === "string" ? rc.split(",")[0].trim() : undefined;
+  if (Array.isArray(rc)) return rc.filter((c): c is string => typeof c === "string");
+  return typeof rc === "string" ? rc.split(",").map((c) => c.trim()).filter(Boolean) : [];
+}
+
+/** Entity tags with an id and a name. Live artists also carry bare `{ type: "urn:tag:voice_type:qloo" }` entries (10-11). */
+function usableTags(e: QlooEntity): { id: string; name: string }[] {
+  return (e.tags ?? []).flatMap((t) => (typeof t?.id === "string" && typeof t?.name === "string" ? [{ id: t.id, name: t.name }] : []));
 }
 
 /**
@@ -277,7 +287,7 @@ export function preferHomeCountry(entities: QlooEntity[], countries: string[]): 
 export function toCandidate(e: QlooEntity, domain: Domain, seeds: Seed[]): Candidate {
   const top = extractContributions(e)[0];
   const seed = top ? seeds.find((s) => s.entityId === top.entityId) : undefined;
-  const tags = (e.tags ?? []).map((t) => ({ id: t.id, name: t.name }));
+  const tags = usableTags(e);
   return {
     entityId: e.entity_id,
     name: e.name,

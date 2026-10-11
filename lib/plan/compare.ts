@@ -5,6 +5,7 @@ import { z } from "zod";
 import { BudgetedClient } from "../qloo/budget";
 import { extractContributions } from "../qloo/parse";
 import type { QlooClient, QlooEntity } from "../qloo/types";
+import { releaseCountries } from "./tools";
 import { LANGUAGES } from "./languages";
 import { LANGUAGE_CODES, type LanguageCode } from "./types";
 
@@ -91,7 +92,7 @@ async function askGenericLlm(model: LanguageModel, input: CompareInput, abortSig
  * ("Kingdom" should be the Korean series, not a same-named film from elsewhere.)
  */
 export function pickSearchHit(title: string, hits: QlooEntity[], countries: string[]): QlooEntity | undefined {
-  const fromLang = (e: QlooEntity) => (e.properties?.release_country ?? []).some((c) => countries.includes(c));
+  const fromLang = (e: QlooEntity) => releaseCountries(e).some((c) => countries.includes(c));
   const exact = (e: QlooEntity) => norm(e.name) === norm(title);
   return hits.find((e) => exact(e) && fromLang(e)) ?? hits.find(fromLang) ?? hits.find(exact) ?? hits[0];
 }
@@ -148,7 +149,7 @@ export async function runCompare(
   const toItem = (id: string, fallback: QlooEntity | undefined, name: string, asked?: string): ScoredItem => {
     const e = scored.get(id) ?? fallback;
     const top = e ? extractContributions(e)[0] : undefined;
-    const rc = e?.properties?.release_country;
+    const rc = e ? releaseCountries(e) : [];
     return {
       name,
       ...(asked && norm(asked) !== norm(name) ? { asked } : {}),
@@ -156,7 +157,7 @@ export async function runCompare(
       entityId: id,
       affinity: scored.get(id)?.query?.affinity,
       popularity: e?.popularity,
-      inLanguage: rc ? rc.some((c) => countries.includes(c)) : undefined,
+      inLanguage: rc.length ? rc.some((c) => countries.includes(c)) : undefined,
       because: top ? seedName.get(top.entityId) : undefined,
       found: true,
     };
