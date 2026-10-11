@@ -12,7 +12,7 @@ export const AGENT_MAX_STEPS = 8;
 export const SYSTEM = `You are the planning agent of "Subtitles Off", which builds a four-week language immersion plan from things a learner already loves.
 Rules:
 - Use the tools. Call discover for tv_show, movie and artist. If a domain returns fewer than 3 candidates, call widen for that domain.
-- Then call compose_plan once with 6 to 10 picks: at least 3 shows or films and 2 artists when available. Prefer high affinity, spread the picks across the learner's different favorites, and include at least one easy (tier 1) title for beginners.
+- Then call compose_plan once with 6 to 10 picks: at least 3 shows or films and 4 artists when available (the plan plays one artist per week). Prefer high affinity, spread the picks across the learner's different favorites, and include at least one easy (tier 1) title for beginners.
 - Only use entityId values returned by the tools. Never invent titles.
 - reason: one short English sentence (max 20 words) linking the pick to the learner's favorites. Never write text in the target language. Never promise learning outcomes.
 - Week order and difficulty are decided by code after you submit; do not describe a schedule.
